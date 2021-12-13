@@ -46,8 +46,19 @@ type
     function GetTagByNumber(Number: Integer): THtmlTag;
   end;
 
+  TURLSchemes = class(TStringList)
+  private
+    FMaxLen: Integer;
+  public
+    function Add(const S: String): Integer; override;
+    function IsURL(const S: String): Boolean;
+    function GetScheme(const S: String): String;
+    property MaxLen: Integer read FMaxLen;
+  end;
+
 var
   HtmlTagList: THtmlTagList;
+  URLSchemes: TURLSchemes;
 
 const
   UNKNOWN_TAG    = 0;
@@ -116,38 +127,53 @@ const
   OPTION_TAG     = 63;
   P_TAG          = 64;
   PARAM_TAG      = 65;
-  PRE_TAG        = 65;
-  Q_TAG          = 66;
-  S_TAG          = 67;
-  SAMP_TAG       = 68;
-  SCRIPT_TAG     = 69;
-  SELECT_TAG     = 70;
-  SMALL_TAG      = 71;
-  SPAN_TAG       = 72;
-  STRIKE_TAG     = 73;
-  STRONG_TAG     = 74;
-  STYLE_TAG      = 75;
-  SUB_TAG        = 76;
-  SUP_TAG        = 77;
-  TABLE_TAG      = 78;
-  TBODY_TAG      = 79;
-  TD_TAG         = 80;
-  TEXTAREA_TAG   = 81;
-  TFOOT_TAG      = 82;
-  TH_TAG         = 83;
-  THEAD_TAG      = 84;
-  TITLE_TAG      = 85;
-  TR_TAG         = 86;
-  TT_TAG         = 87;
-  U_TAG          = 88;
-  UL_TAG         = 89;
-  VAR_TAG        = 90;
+  PRE_TAG        = 66;
+  Q_TAG          = 67;
+  S_TAG          = 68;
+  SAMP_TAG       = 69;
+  SCRIPT_TAG     = 70;
+  SELECT_TAG     = 71;
+  SMALL_TAG      = 72;
+  SPAN_TAG       = 73;
+  STRIKE_TAG     = 74;
+  STRONG_TAG     = 75;
+  STYLE_TAG      = 76;
+  SUB_TAG        = 77;
+  SUP_TAG        = 78;
+  TABLE_TAG      = 79;
+  TBODY_TAG      = 80;
+  TD_TAG         = 81;
+  TEXTAREA_TAG   = 82;
+  TFOOT_TAG      = 83;
+  TH_TAG         = 84;
+  THEAD_TAG      = 85;
+  TITLE_TAG      = 86;
+  TR_TAG         = 87;
+  TT_TAG         = 88;
+  U_TAG          = 89;
+  UL_TAG         = 90;
+  VAR_TAG        = 91;
+
+  BlockTags               = [ADDRESS_TAG, BLOCKQUOTE_TAG, CENTER_TAG, DIV_TAG, DL_TAG, FIELDSET_TAG, {FORM_TAG,} H1_TAG, H2_TAG, H3_TAG, H4_TAG, H5_TAG, H6_TAG, HR_TAG, NOSCRIPT_TAG, OL_TAG, PRE_TAG, TABLE_TAG, UL_TAG];
+  BlockParentTags         = [ADDRESS_TAG, BLOCKQUOTE_TAG, CENTER_TAG, DIV_TAG, DL_TAG, FIELDSET_TAG, H1_TAG, H2_TAG, H3_TAG, H4_TAG, H5_TAG, H6_TAG, HR_TAG, LI_TAG, NOSCRIPT_TAG, OL_TAG, PRE_TAG, TD_TAG, TH_TAG, UL_TAG];
+  HeadTags                = [BASE_TAG, LINK_TAG, META_TAG, SCRIPT_TAG, STYLE_TAG, TITLE_TAG];
+  {Elements forbidden from having an end tag, and therefore are empty; from HTML 4.01 spec}
+  EmptyTags               = [AREA_TAG, BASE_TAG, BASEFONT_TAG, BR_TAG, COL_TAG, FRAME_TAG, HR_TAG, IMG_TAG, INPUT_TAG, ISINDEX_TAG, LINK_TAG, META_TAG, PARAM_TAG];
+  PreserveWhiteSpaceTags  = [PRE_TAG];
+  NeedFindParentTags      = [COL_TAG, COLGROUP_TAG, DD_TAG, DT_TAG, LI_TAG, OPTION_TAG, P_TAG, TABLE_TAG, TBODY_TAG, TD_TAG, TFOOT_TAG, TH_TAG, THEAD_TAG, TR_TAG];
+  ListItemParentTags      = [DIR_TAG, MENU_TAG, OL_TAG, UL_TAG];
+  DefItemParentTags       = [DL_TAG];
+  TableSectionParentTags  = [TABLE_TAG];
+  ColParentTags           = [COLGROUP_TAG];
+  RowParentTags           = [TABLE_TAG, TBODY_TAG, TFOOT_TAG, THEAD_TAG];
+  CellParentTags          = [TR_TAG];
+  OptionParentTags        = [OPTGROUP_TAG, SELECT_TAG];
 
 implementation
 
 uses
   SysUtils;
-  
+
 constructor THtmlTag.Create(const AName: TDomString; ANumber: Integer; AParserFlags, AFormatterFlags: THtmlTagFlags);
 begin
   inherited Create;
@@ -187,7 +213,7 @@ begin
   FList.Add(THtmlTag.Create('dir',        DIR_TAG,        [], []));
   FList.Add(THtmlTag.Create('div',        DIV_TAG,        [], []));
   FList.Add(THtmlTag.Create('dl',         DL_TAG,         [], []));
-  FList.Add(THtmlTag.Create('dt',         DT_TAG,         [], []));         
+  FList.Add(THtmlTag.Create('dt',         DT_TAG,         [], []));
   FList.Add(THtmlTag.Create('em',         EM_TAG,         [], []));
   FList.Add(THtmlTag.Create('fieldset',   FIELDSET_TAG,   [], []));
   FList.Add(THtmlTag.Create('font',       FONT_TAG,       [], []));
@@ -226,7 +252,7 @@ begin
   FList.Add(THtmlTag.Create('p',          P_TAG,          [], []));
   FList.Add(THtmlTag.Create('param',      PARAM_TAG,      [], []));
   FList.Add(THtmlTag.Create('pre',        PRE_TAG,        [], []));
-  FList.Add(THtmlTag.Create('q',          Q_TAG,          [], []));          
+  FList.Add(THtmlTag.Create('q',          Q_TAG,          [], []));
   FList.Add(THtmlTag.Create('s',          S_TAG,          [], []));
   FList.Add(THtmlTag.Create('samp',       SAMP_TAG,       [], []));
   FList.Add(THtmlTag.Create('script',     SCRIPT_TAG,     [], []));
@@ -255,8 +281,12 @@ begin
 end;
 
 destructor THtmlTagList.Destroy;
+var
+  I: Integer;
 begin
-  //TODO
+  for I := FList.Count - 1 downto 0 do
+    THtmlTag(FList[I]).Free;
+  FList.Free;
   FUnknownTag.Free;
   inherited Destroy
 end;
@@ -313,12 +343,53 @@ begin
   Result := GetTag(CompareNumber)
 end;
 
+function TURLSchemes.Add(const S: String): Integer;
+begin
+  if Length(S) > FMaxLen then
+    FMaxLen := Length(S);
+  Result := inherited Add(S)
+end;
+
+function TURLSchemes.IsURL(const S: String): Boolean;
+begin
+  Result := IndexOf(LowerCase(S)) >= 0
+end;
+
+function TURLSchemes.GetScheme(const S: String): String;
+const
+  SchemeChars = [Ord('A')..Ord('Z'), Ord('a')..Ord('z')];
+var
+  I: Integer;
+begin
+  Result := '';
+  for I := 1 to MaxLen + 1 do
+  begin
+    if I > Length(S) then
+      Exit;
+    if S[I] = ':' then
+    begin
+      if IsURL(Copy(S, 1, I - 1)) then
+        Result := Copy(S, 1, I - 1);
+      Exit
+    end
+  end
+end;
+
 initialization
 
   HtmlTagList := THtmlTagList.Create;
+  URLSchemes := TURLSchemes.Create;
+  URLSchemes.Add('http');
+  URLSchemes.Add('https');
+  URLSchemes.Add('ftp');
+  URLSchemes.Add('mailto');
+  URLSchemes.Add('news');
+  URLSchemes.Add('nntp');
+  URLSchemes.Add('gopher');
 
 finalization
 
-  HtmlTagList.Free
+  HtmlTagList.Free;
+  URLSchemes.Free
 
 end.

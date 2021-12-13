@@ -13,6 +13,7 @@ const
 
   WhiteSpace = [TAB, LF, CR, SP];
 
+  NONE                           = 0;  // extension
   ELEMENT_NODE                   = 1;
   ATTRIBUTE_NODE                 = 2;
   TEXT_NODE                      = 3;
@@ -25,6 +26,8 @@ const
   DOCUMENT_TYPE_NODE             = 10;
   DOCUMENT_FRAGMENT_NODE         = 11;
   NOTATION_NODE                  = 12;
+
+  END_ELEMENT_NODE               = 255; // extension
 
   INDEX_SIZE_ERR                 = 1;
   DOMSTRING_SIZE_ERR             = 2;
@@ -42,26 +45,17 @@ const
   NAMESPACE_ERR                  = 14;
   INVALID_ACCESS_ERR             = 15;
 
+  {HTML DTDs}
+  DTD_HTML_STRICT    = 1;
+  DTD_HTML_LOOSE     = 2;
+  DTD_HTML_FRAMESET  = 3;
+  DTD_XHTML_STRICT   = 4;
+  DTD_XHTML_LOOSE    = 5;
+  DTD_XHTML_FRAMESET = 6;
+  
 type
   TDomString = WideString;
 
-const
-  NodeTypeToStr: array[ELEMENT_NODE..NOTATION_NODE] of TDomString = (
-    'ELEMENT_NODE',
-    'ATTRIBUTE_NODE',
-    'TEXT_NODE',
-    'CDATA_SECTION_NODE',
-    'ENTITY_REFERENCE_NODE',
-    'ENTITY_NODE',
-    'PROCESSING_INSTRUCTION_NODE',
-    'COMMENT_NODE',
-    'DOCUMENT_NODE',
-    'DOCUMENT_TYPE_NODE',
-    'DOCUMENT_FRAGMENT_NODE',
-    'NOTATION_NODE'
-  );
-
-type
   DomException = class(Exception)
   private
     FCode: Integer;
@@ -96,7 +90,6 @@ type
     FNodeName: TDomString;
     FNodeValue: TDomString;
     FAttributes: TNamedNodeMap;
-    FChildNodes: TNodeList;
     function GetFirstChild: TNode;
     function GetLastChild: TNode;
     function GetPreviousSibling: TNode;
@@ -104,7 +97,8 @@ type
     function GetLocalName: TDomString;
     function GetNamespaceURI: TDomString;
     function InsertSingleNode(newChild, refChild: TNode): TNode;
-  protected
+  protected                    
+    FChildNodes: TNodeList;
     function GetNodeName: TDomString; virtual;
     function GetNodeValue: TDomString; virtual;
     function GetNodeType: Integer; virtual; abstract;
@@ -116,10 +110,9 @@ type
     procedure SetPrefix(const value: TDomString);
     procedure SetLocalName(const value: TDomString);
     procedure CloneChildNodesFrom(Node: TNode);
-    procedure ClearChildNodes;
     constructor Create(ownerDocument: TDocument; const namespaceURI, qualifiedName: TDomString; withNS: Boolean);
-    destructor Destroy; override;
   public
+    destructor Destroy; override;
     function insertBefore(newChild, refChild: TNode): TNode;
     function replaceChild(newChild, oldChild: TNode): TNode;
     function removeChild(oldChild: TNode): TNode;
@@ -160,11 +153,11 @@ type
     procedure Delete(I: Integer);
     procedure Insert(I: Integer; node: TNode);
     procedure Remove(node: TNode);
-    procedure Clear;
+    procedure Clear(WithItems: Boolean);
     property ownerNode: TNode read FOwnerNode;
     constructor Create(AOwnerNode: TNode);
+  public                                  
     destructor Destroy; override;
-  public
     function item(index: Integer): TNode; virtual;
     property length: Integer read GetLength;
   end;
@@ -191,7 +184,6 @@ type
     procedure deleteData(offset, count: Integer);
     procedure insertData(offset: Integer; arg: TDomString);
     procedure replaceData(offset, count: Integer; const arg: TDomString);
-    procedure normalizeWhiteSpace;
     property data: TDomString read GetNodeValue write SetNodeValue;
     property length: Integer read GetLength;
   end;
@@ -252,7 +244,6 @@ type
     function CanInsert(node: TNode): Boolean; override;
     function ExportNode(otherDocument: TDocument; deep: Boolean): TNode; override;
     constructor Create(ownerDocument: TDocument; const namespaceURI, qualifiedName: TDomString; withNS: Boolean);
-    destructor Destroy; override;
   public
     function cloneNode(deep: Boolean): TNode; override;
     function getAttribute(const name: TDomString): TDomString;
@@ -341,9 +332,10 @@ type
     procedure AddSearchNodeList(NodeList: TNodeList);
     procedure RemoveSearchNodeList(NodeList: TNodeList);
     procedure InvalidateSearchNodeLists;
+    procedure SetDocType(value: TDocumentType);
+  public
     constructor Create(doctype: TDocumentType);
     destructor Destroy; override;
-  public                                
     procedure Clear;
     function cloneNode(deep: Boolean): TNode; override;
     function createElement(const tagName: TDomString): TElement;
@@ -357,7 +349,7 @@ type
     function importNode(importedNode: TNode; deep: Boolean): TNode;
     function createElementNS(const namespaceURI, qualifiedName: TDomString): TElement;
     function createAttributeNS(const namespaceURI, qualifiedName: TDomString): TAttr;
-    property doctype: TDocumentType read FDocType;
+    property doctype: TDocumentType read FDocType write SetDocType;
     property namespaceURIList: TNamespaceURIList read FNamespaceURIList;
     property documentElement: TElement read GetDocumentElement;
   end;
@@ -366,16 +358,15 @@ type
   public
     class function hasFeature(const feature, version: TDomString): Boolean;
     class function createDocumentType(const qualifiedName, publicId, systemId: TDomString): TDocumentType;
+    class function createHtmlDocumentType(htmlDocType: Integer): TDocumentType; // extension
+    class function createEmptyDocument(doctype: TDocumentType): TDocument; // extension
     class function createDocument(const namespaceURI, qualifiedName: TDomString; doctype: TDocumentType): TDocument;
   end;
-
-function IsWhiteSpace(W: WideChar): Boolean;
-function Concat(const S1, S2: TDomString): TDomString;
 
 implementation
 
 uses
-  Entities, DomTraversal;
+  Entities;
 
 const
   ExceptionMsg: array[INDEX_SIZE_ERR..INVALID_ACCESS_ERR] of String = (
@@ -399,6 +390,26 @@ const
   ID_NAME = 'id';
 
 type
+  TDTDParams = record
+    PublicId: TDomString;
+    SystemId: TDomString;
+  end;
+
+  TDTDList = array[DTD_HTML_STRICT..DTD_XHTML_FRAMESET] of TDTDParams;
+
+const
+  DTDList: TDTDList = (
+    (publicId: '-//W3C//DTD HTML 4.01//EN';              systemId: 'http://www.w3.org/TR/html4/strict.dtd'),
+    (publicId: '-//W3C//DTD HTML 4.01 Transitional//EN'; systemId: 'http://www.w3.org/TR/1999/REC-html401-19991224/loose.dtd'),
+    (publicId: '-//W3C//DTD HTML 4.01 Frameset//EN';     systemId: 'http://www.w3.org/TR/1999/REC-html401-19991224/frameset.dtd'),
+    (publicId: '-//W3C//DTD XHTML 1.0 Strict//EN';       systemId: 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd'),
+    (publicId: '-//W3C//DTD XHTML 1.0 Transitional//EN'; systemId: 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd'),
+    (publicId: '-//W3C//DTD XHTML 1.0 Frameset//EN';     systemId: 'http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd')
+  );
+
+  HTML_TAG_NAME = 'html';
+
+type
   TSearchNodeList = class(TNodeList)
   private
     FNamespaceParam : TDomString;
@@ -414,19 +425,14 @@ type
     procedure Invalidate; 
     function item(index: Integer): TNode; override;
   end;
-
+{
 function Concat(const S1, S2: TDomString): TDomString;
 begin
   SetLength(Result, Length(S1) + Length(S2));
   Move(S1[1], Result[1], 2 * Length(S1));
   Move(S2[1], Result[Length(S1) + 1], 2 * Length(S2))
 end;
-
-function IsWhiteSpace(W: WideChar): Boolean;
-begin
-  Result := Ord(W) in WhiteSpace
-end;
-
+}
 function IsNCName(const Value: TDomString): Boolean;
 begin
   //TODO
@@ -501,8 +507,13 @@ destructor TNode.Destroy;
 begin
   if Assigned(FChildNodes) then
   begin
-    ClearChildNodes;
-    childNodes.Free
+    FChildNodes.Clear(true);
+    FChildNodes.Free
+  end;
+  if Assigned(FAttributes) then
+  begin
+    FAttributes.Clear(true);
+    FAttributes.Free
   end;
   inherited Destroy
 end;
@@ -528,7 +539,7 @@ var
   I: Integer;
 begin 
   Result := nil;
-  if parentNode <> nil then
+  if Assigned(parentNode) then
   begin
     I := parentNode.childNodes.IndexOf(Self);
     if I > 0 then
@@ -541,7 +552,7 @@ var
   I: Integer;
 begin 
   Result := nil;
-  if parentNode <> nil then
+  if Assigned(parentNode) then
   begin
     I := parentNode.childNodes.IndexOf(Self);
     if (I >= 0) and (I < parentNode.childNodes.length - 1) then
@@ -606,7 +617,7 @@ begin
     for I := 0 to childNodes.length - 1 do
     begin
       Result := childNodes.item(I).getElementById(elementId);
-      if Result <> nil then
+      if Assigned(Result) then
         Exit
     end
   end
@@ -655,15 +666,6 @@ begin
   end
 end;
                                    
-procedure TNode.ClearChildNodes;
-var
-  I: Integer;
-begin
-  for I := 0 to childNodes.length - 1 do
-    childNodes.item(I).Free;
-  childNodes.Clear
-end;
-
 function TNode.InsertSingleNode(newChild, refChild: TNode): TNode;
 var
   I: Integer;
@@ -672,7 +674,7 @@ begin
     raise DomException.Create(HIERARCHY_REQUEST_ERR);
   if newChild <> refChild then
   begin
-    if refChild <> nil then
+    if Assigned(refChild) then
     begin
       I := FChildNodes.IndexOf(refChild);
       if I < 0 then
@@ -681,7 +683,7 @@ begin
     end
     else
       FChildNodes.Add(newChild);
-    if newChild.parentNode <> nil then
+    if Assigned(newChild.parentNode) then
       newChild.parentNode.removeChild(newChild);
     newChild.FParentNode := Self
   end;
@@ -694,13 +696,13 @@ begin
     raise DomException.Create(WRONG_DOCUMENT_ERR);
   if newChild.nodeType = DOCUMENT_FRAGMENT_NODE then
   begin
-    while newChild.firstChild <> nil do
+    while Assigned(newChild.firstChild) do
       InsertSingleNode(newChild.firstChild, refChild);
     Result := newChild
   end
   else
     Result := InsertSingleNode(newChild, refChild);
-  if ownerDocument <> nil then
+  if Assigned(ownerDocument) then
     ownerDocument.InvalidateSearchNodeLists
 end;
 
@@ -712,14 +714,14 @@ begin
     removeChild(oldChild)
   end;
   Result := oldChild;
-  if ownerDocument <> nil then
+  if Assigned(ownerDocument) then
     ownerDocument.InvalidateSearchNodeLists
 end;
 
 function TNode.appendChild(newChild: TNode): TNode;
 begin
   Result := insertBefore(newChild, nil);
-  if ownerDocument <> nil then
+  if Assigned(ownerDocument) then
     ownerDocument.InvalidateSearchNodeLists
 end;
 
@@ -733,7 +735,7 @@ begin
   FChildNodes.Delete(I);
   oldChild.FParentNode := nil;
   Result := oldChild;
-  if ownerDocument <> nil then
+  if Assigned(ownerDocument) then
     ownerDocument.InvalidateSearchNodeLists
 end;
 
@@ -749,12 +751,12 @@ end;
 
 function TNode.hasAttributes: Boolean;
 begin
-  Result := (FAttributes <> nil) and (FAttributes.length <> 0)
+  Result := Assigned(FAttributes) and (FAttributes.length <> 0)
 end;
                          
 function TNode.ancestorOf(node: TNode): Boolean;
 begin
-  while node <> nil do
+  while Assigned(node) do
   begin
     if node = self then
     begin
@@ -826,7 +828,7 @@ procedure TNodeList.Insert(I: Integer; Node: TNode);
 begin
   FList.Insert(I, Node)
 end;
-                          
+
 procedure TNodeList.Delete(I: Integer);
 begin
   FList.Delete(I)
@@ -850,8 +852,15 @@ begin
     Result := nil
 end;
 
-procedure TNodeList.Clear;
+procedure TNodeList.Clear(WithItems: Boolean);
+var
+  I: Integer;
 begin
+  if WithItems then
+  begin
+    for I := 0 to length - 1 do
+      item(I).Free
+  end;
   FList.Clear
 end;
 
@@ -865,7 +874,7 @@ end;
 
 destructor TSearchNodeList.Destroy;
 begin
-  if (ownerNode <> nil) and (ownerNode.ownerDocument <> nil) then
+  if Assigned(ownerNode) and Assigned(ownerNode.ownerDocument) then
     ownerNode.ownerDocument.RemoveSearchNodeList(Self);
   inherited Destroy
 end;
@@ -896,8 +905,8 @@ end;
 
 procedure TSearchNodeList.Rebuild;
 begin
-  Clear;
-  if (ownerNode <> nil) and (ownerNode.ownerDocument <> nil) then
+  Clear(false);
+  if Assigned(ownerNode) and Assigned(ownerNode.ownerDocument) then
   begin
     TraverseTree(ownerNode);
     ownerNode.ownerDocument.AddSearchNodeList(Self)
@@ -939,11 +948,11 @@ begin
   if arg.NodeType = ATTRIBUTE_NODE then
   begin
     Attr := arg as TAttr;
-    if (Attr.ownerElement <> nil) and (Attr.ownerElement <> ownerNode) then
+    if Assigned(Attr.ownerElement) and (Attr.ownerElement <> ownerNode) then
       raise DomException(INUSE_ATTRIBUTE_ERR)
   end;
   Result := getNamedItem(arg.nodeName);
-  if Result <> nil then
+  if Assigned(Result) then
     Remove(Result);
   Add(arg)
 end;
@@ -981,11 +990,11 @@ begin
   if arg.NodeType = ATTRIBUTE_NODE then
   begin
     Attr := arg as TAttr;
-    if (Attr.ownerElement <> nil) and (Attr.ownerElement <> ownerNode) then
+    if Assigned(Attr.ownerElement) and (Attr.ownerElement <> ownerNode) then
       raise DomException(INUSE_ATTRIBUTE_ERR)
   end;
   Result := getNamedItemNS(arg.namespaceURI, arg.localName);
-  if Result <> nil then
+  if Assigned(Result) then
     Remove(Result);
   Add(arg)
 end;
@@ -1066,39 +1075,6 @@ begin
   FNodeValue := substringData(0, offset) + arg + substringData(offset + count, length - (offset + count))
 end;
 
-procedure TCharacterData.normalizeWhiteSpace;
-var
-  WS: TDomString;
-  I, J, Count: Integer;
-begin
-  SetLength(WS, length);
-  J := 0;
-  Count := 0;
-  for I := 1 to length do
-  begin
-    if IsWhiteSpace(FNodeValue[I]) then
-    begin
-      Inc(Count);
-      Continue
-    end;
-    if Count <> 0 then
-    begin
-      Count := 0;
-      Inc(J);
-      WS[J] := ' '
-    end;
-    Inc(J);
-    WS[J] := FNodeValue[I]
-  end;
-  if Count <> 0 then
-  begin
-    Inc(J);
-    WS[J] := ' '
-  end;
-  SetLength(WS, J);
-  FNodeValue := WS
-end;
-
 function TCDATASection.GetNodeName: TDomString;
 begin
   Result := '#cdata-section'
@@ -1163,7 +1139,7 @@ function TTextNode.splitText(offset: Integer): TTextNode;
 begin
   Result := ownerDocument.CreateTextNode(substringData(offset, length - offset));
   deleteData(offset, length - offset);
-  if parentNode <> nil then
+  if Assigned(parentNode) then
     insertBefore(Result, nextSibling)
 end;
 
@@ -1222,7 +1198,7 @@ end;
 
 procedure TAttr.SetNodeValue(const value: TDomString);
 begin
-  ClearChildNodes;
+  FChildNodes.Clear(false);
   appendChild(ownerDocument.CreateTextNode(value))
 end;
 
@@ -1259,12 +1235,6 @@ begin
   FAttributes := TNamedNodeMap.Create(Self)
 end;
 
-destructor TElement.Destroy;
-begin
-  FAttributes.Free;
-  inherited destroy
-end;
-
 function TElement.GetNodeType: Integer;
 begin
   Result := ELEMENT_NODE
@@ -1299,7 +1269,7 @@ var
   Attr: TAttr;
 begin
   Attr := getAttributeNode(name);
-  if Attr <> nil then
+  if Assigned(Attr) then
     Result := Attr.value
   else
     Result := ''
@@ -1316,10 +1286,10 @@ end;
 
 function TElement.setAttributeNode(newAttr: TAttr): TAttr;
 begin
-  if newAttr.ownerElement <> nil then
+  if Assigned(newAttr.ownerElement) then
     raise DomException.Create(INUSE_ATTRIBUTE_ERR);
   Result := attributes.setNamedItem(newAttr) as TAttr;
-  if Result <> nil then
+  if Assigned(Result) then
     Result.FParentNode := nil;
   newAttr.FParentNode := Self
 end;
@@ -1343,7 +1313,7 @@ var
   Attr: TAttr;
 begin
   Attr := getAttributeNodeNS(namespaceURI, localName);
-  if Attr <> nil then
+  if Assigned(Attr) then
     Result := Attr.value
   else
     Result := ''
@@ -1370,22 +1340,22 @@ end;
 
 function TElement.setAttributeNodeNS(newAttr: TAttr): TAttr;
 begin
-  if newAttr.ownerElement <> nil then
+  if Assigned(newAttr.ownerElement) then
     raise DomException.Create(INUSE_ATTRIBUTE_ERR);
   Result := attributes.setNamedItemNS(newAttr) as TAttr;
-  if Result <> nil then
+  if Assigned(Result) then
     Result.FParentNode := nil;
   newAttr.FParentNode := Self
 end;
 
 function TElement.hasAttribute(const name: TDomString): Boolean;
 begin
-  Result := getAttributeNode(name) <> nil
+  Result := Assigned(getAttributeNode(name))
 end;
 
 function TElement.hasAttributeNS(const namespaceURI, localName: TDomString): Boolean;
 begin
-  Result := getAttributeNodeNS(namespaceURI, localName) <> nil
+  Result := Assigned(getAttributeNodeNS(namespaceURI, localName))
 end;
 
 constructor TDocumentType.Create(ownerDocument: TDocument; const name, publicId, systemId: TDomString);
@@ -1443,7 +1413,7 @@ constructor TDocument.Create(doctype: TDocumentType);
 begin
   inherited Create(Self, '', '', false);
   FDocType := doctype;
-  if FDocType <> nil then
+  if Assigned(FDocType) then
     FDocType.FOwnerDocument := Self;
   FNamespaceURIList := TNamespaceURIList.Create;
   FSearchNodeLists := TList.Create;
@@ -1455,6 +1425,13 @@ begin
   FNamespaceURIList.Free;
   FSearchNodeLists.Free;
   inherited Destroy
+end;
+
+procedure TDocument.SetDocType(value: TDocumentType);
+begin
+  if Assigned(FDocType) then
+    FDocType.Free;
+  FDocType := value
 end;
 
 function TDocument.GetDocumentElement: TElement;
@@ -1486,14 +1463,14 @@ end;
 
 procedure TDocument.Clear;
 begin
-  if FDocType <> nil then
+  if Assigned(FDocType) then
   begin
     FDocType.Free;
     FDocType := nil
   end;
   FNamespaceURIList.Clear;
   FSearchNodeLists.Clear;
-  ClearChildNodes
+  FChildNodes.Clear(false)
 end;
 
 procedure TDocument.AddSearchNodeList(NodeList: TNodeList);
@@ -1633,11 +1610,25 @@ begin
   Result := TDocumentType.Create(nil, qualifiedName, publicId, systemId)
 end;
 
+class function DomImplementation.createHtmlDocumentType(htmlDocType: Integer): TDocumentType;
+begin
+  if htmlDocType in [DTD_HTML_STRICT..DTD_XHTML_FRAMESET] then
+    with DTDList[htmlDocType] do
+      Result := createDocumentType(HTML_TAG_NAME, publicId, systemId)
+  else
+    Result := nil
+end;
+
+class function DOMImplementation.createEmptyDocument(doctype: TDocumentType): TDocument;
+begin
+  if Assigned(doctype) and Assigned(doctype.ownerDocument) then
+    raise DomException.Create(WRONG_DOCUMENT_ERR);
+  Result := TDocument.Create(doctype)
+end;
+
 class function DOMImplementation.createDocument(const namespaceURI, qualifiedName: TDomString; doctype: TDocumentType): TDocument;
 begin
-  if doctype.ownerDocument <> nil then
-    raise DomException.Create(WRONG_DOCUMENT_ERR);
-  Result := TDocumentTraversal.Create(doctype);
+  Result := createEmptyDocument(doctype);
   Result.appendChild(Result.createElementNS(namespaceURI, qualifiedName))
 end;
 

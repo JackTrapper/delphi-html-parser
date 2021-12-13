@@ -329,7 +329,7 @@ begin
     else
       L := I + 1
   end;
-  Result := 0
+  Result := 32
 end;
 
 function GetEntValue(const Name: String): WideChar;
@@ -354,4 +354,8 @@ initialization
 
   EntityList := TEntList.Create
 
+finalization
+
+  EntityList.Free
+  
 end.

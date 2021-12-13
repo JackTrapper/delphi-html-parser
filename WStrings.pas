@@ -112,8 +112,12 @@ function WideCompareStr(const S1, S2: WideString): Integer;
 
 implementation
 
+{$IFDEF VER100}{$DEFINE D6_BELOW}{$ENDIF}
+{$IFDEF VER120}{$DEFINE D6_BELOW}{$ENDIF}
+{$IFDEF VER130}{$DEFINE D6_BELOW}{$ENDIF}
+
 uses
-  Consts;
+  Consts{$IFNDEF D6_BELOW}, RTLConsts{$ENDIF};
 
 const
   WordDelimiters = [0..32, 127];
