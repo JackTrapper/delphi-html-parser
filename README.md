@@ -33,3 +33,6 @@ Parser is implemented as several modules:
 - Core.pas - core DOM implementation
 - Entities.pas - HTML character definitions
 - HmlParser.pas - HTML parser
+
+
+http://htmlp.sourceforge.net/
