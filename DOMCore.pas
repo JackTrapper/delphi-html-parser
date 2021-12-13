@@ -3,7 +3,7 @@ unit DomCore;
 interface
 
 uses
-  Classes, SysUtils, WStrings;
+  Classes, SysUtils;
 
 const
   TAB = 9;
@@ -13,19 +13,19 @@ const
 
   WhiteSpace = [TAB, LF, CR, SP];
 
-  NONE                           = 0;  // extension
-  ELEMENT_NODE                   = 1;
-  ATTRIBUTE_NODE                 = 2;
-  TEXT_NODE                      = 3;
-  CDATA_SECTION_NODE             = 4;
-  ENTITY_REFERENCE_NODE          = 5;
-  ENTITY_NODE                    = 6;
-  PROCESSING_INSTRUCTION_NODE    = 7;
-  COMMENT_NODE                   = 8;
-  DOCUMENT_NODE                  = 9;
-  DOCUMENT_TYPE_NODE             = 10;
-  DOCUMENT_FRAGMENT_NODE         = 11;
-  NOTATION_NODE                  = 12;
+  NONE                           = 0;  //extension
+  ELEMENT_NODE                   = 1;	//An Element node like <p> or <div>.
+  ATTRIBUTE_NODE                 = 2;	//An Attribute of an Element. Attributes no longer implement the Node interface as of DOM4.
+  TEXT_NODE                      = 3;	//The actual Text inside an Element or Attr.
+  CDATA_SECTION_NODE             = 4;	//A CDATASection, such as <!CDATA[[ … ]]>.
+  ENTITY_REFERENCE_NODE          = 5;	//An XML Entity Reference node, such as &foo;. Removed in DOM4.
+  ENTITY_NODE                    = 6;	//An XML <!ENTITY …> node. Removed in DOM4.
+  PROCESSING_INSTRUCTION_NODE    = 7;	//A ProcessingInstruction of an XML document, such as <?xml-stylesheet … ?>.
+  COMMENT_NODE                   = 8;	//A Comment node, such as <!-- … -->.
+  DOCUMENT_NODE                  = 9;	//A Document node.
+  DOCUMENT_TYPE_NODE             = 10;	//A DocumentType node, such as <!DOCTYPE html>.
+  DOCUMENT_FRAGMENT_NODE         = 11;	//A DocumentFragment node.
+  NOTATION_NODE                  = 12;	//An XML <!NOTATION ...> node. Removed in DOM4.
 
   END_ELEMENT_NODE               = 255; // extension
 
@@ -54,7 +54,7 @@ const
   DTD_XHTML_FRAMESET = 6;
   
 type
-  TDomString = WideString;
+	TDomString = {$IFDEF UNICODE}UnicodeString{$ELSE}WideString{$ENDIF};
 
   DomException = class(Exception)
   private
@@ -66,7 +66,7 @@ type
 
   TNamespaceURIList = class
   private
-    FList: TWStrings;
+    FList: array of TDomString;
     function GetItem(I: Integer): TDomString;
   public
     constructor Create;
@@ -442,18 +442,16 @@ end;
 constructor TNamespaceURIList.Create;
 begin
   inherited Create;
-  FList := TWStringList.Create;
-  FList.Add('')
 end;
 
 destructor TNamespaceURIList.Destroy;
 begin
-  FList.Free;
   inherited Destroy
 end;
+
 procedure TNamespaceURIList.Clear;
 begin
-  FList.Clear
+	SetLength(FList, 0);
 end;
 
 function TNamespaceURIList.GetItem(I: Integer): TDomString;
@@ -463,15 +461,21 @@ end;
 
 function TNamespaceURIList.Add(const NamespaceURI: TDomString): Integer;
 var
-  I: Integer;
+	I: Integer;
 begin
-  for I := 0 to FList.Count - 1 do
-    if FList[I] = NamespaceURI then
-    begin
-      Result := I;
-      Exit
-    end;
-  Result := FList.Add(NamespaceURI)
+	for I := 0 to High(FList) do
+	begin
+		if FList[I] = NamespaceURI then
+		begin
+			Result := I;
+			Exit
+		end;
+	end;
+
+	I := Length(FList);
+	SetLength(FList, I+1);
+	FList[I] := NamespaceURI;
+	Result := I;
 end;
 
 constructor DomException.Create(code: Integer);
