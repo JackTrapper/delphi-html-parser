@@ -1,5 +1,10 @@
 unit DomCore;
 
+{
+	This unit represents in implementation of the core DOM classes.
+	https://www.w3.org/TR/DOM-Level-3-Core/core.html
+}
+
 interface
 
 uses
@@ -13,22 +18,23 @@ const
 
 	WhiteSpace = [TAB, LF, CR, SP];
 
-	NONE                           = 0;  //extension
-	ELEMENT_NODE                   = 1;	//An Element node like <p> or <div>.
-	ATTRIBUTE_NODE                 = 2;	//An Attribute of an Element. Attributes no longer implement the Node interface as of DOM4.
-	TEXT_NODE                      = 3;	//The actual Text inside an Element or Attr.
-	CDATA_SECTION_NODE             = 4;	//A CDATASection, such as <!CDATA[[ … ]]>.
-	ENTITY_REFERENCE_NODE          = 5;	//An XML Entity Reference node, such as &foo;. Removed in DOM4.
-	ENTITY_NODE                    = 6;	//An XML <!ENTITY …> node. Removed in DOM4.
-	PROCESSING_INSTRUCTION_NODE    = 7;	//A ProcessingInstruction of an XML document, such as <?xml-stylesheet … ?>.
-	COMMENT_NODE                   = 8;	//A Comment node, such as <!-- … -->.
-	DOCUMENT_NODE                  = 9;	//A Document node.
+	NONE                           =  0;	//extension
+	ELEMENT_NODE                   =  1;	//An Element node like <p> or <div>.
+	ATTRIBUTE_NODE                 =  2;	//An Attribute of an Element. Attributes no longer implement the Node interface as of DOM4.
+	TEXT_NODE                      =  3;	//The actual Text inside an Element or Attr.
+	CDATA_SECTION_NODE             =  4;	//A CDATASection, such as <!CDATA[[ … ]]>.
+	ENTITY_REFERENCE_NODE          =  5;	//An XML Entity Reference node, such as &foo;. Removed in DOM4.
+	ENTITY_NODE                    =  6;	//An XML <!ENTITY …> node. Removed in DOM4.
+	PROCESSING_INSTRUCTION_NODE    =  7;	//A ProcessingInstruction of an XML document, such as <?xml-stylesheet … ?>.
+	COMMENT_NODE                   =  8;	//A Comment node, such as <!-- … -->.
+	DOCUMENT_NODE                  =  9;	//A Document node.
 	DOCUMENT_TYPE_NODE             = 10;	//A DocumentType node, such as <!DOCTYPE html>.
 	DOCUMENT_FRAGMENT_NODE         = 11;	//A DocumentFragment node.
 	NOTATION_NODE                  = 12;	//An XML <!NOTATION ...> node. Removed in DOM4.
 
 	END_ELEMENT_NODE               = 255; // extension
 
+	//DomException error codes
 	INDEX_SIZE_ERR                 = 1;
 	DOMSTRING_SIZE_ERR             = 2;
 	HIERARCHY_REQUEST_ERR          = 3;
@@ -39,11 +45,13 @@ const
 	NOT_FOUND_ERR                  = 8;
 	NOT_SUPPORTED_ERR              = 9;
 	INUSE_ATTRIBUTE_ERR            = 10;
-	INVALID_STATE_ERR              = 11;
-	SYNTAX_ERR                     = 12;
-	INVALID_MODIFICATION_ERR       = 13;
-	NAMESPACE_ERR                  = 14;
-	INVALID_ACCESS_ERR             = 15;
+	INVALID_STATE_ERR              = 11; //DOM Level 2
+	SYNTAX_ERR                     = 12; //DOM Level 2
+	INVALID_MODIFICATION_ERR       = 13; //DOM Level 2
+	NAMESPACE_ERR                  = 14; //DOM Level 2
+	INVALID_ACCESS_ERR             = 15; //DOM Level 2
+	VALIDATION_ERR                 = 16; //DOM Level 3
+	TYPE_MISMATCH_ERR              = 17; //DOM Level 3
 
 	{HTML DTDs}
 	DTD_HTML_STRICT    = 1;
@@ -62,6 +70,40 @@ type
 	public
 		constructor Create(code: Integer);
 		property code: Integer read FCode;
+	end;
+
+{
+	The DOMStringList interface provides the abstraction of an ordered collection of DOMString values,
+	without defining or constraining how this collection is implemented.
+	The items in the DOMStringList are accessible via an integral index, starting from 0.
+
+	Added in DOM level 3
+}
+	IDOMStringList = interface
+		['{789034BD-ABC7-451B-AB27-8C976874364A}']
+		function getLength: Integer;
+		function Item(Index: Integer): TDomString;
+		function Contains(const str: TDomString): Boolean;
+		property Length: Integer read getLength;
+	end;
+
+{
+	The NameList interface provides the abstraction of an ordered collection of parallel
+	pairs of name and namespace values (which could be null values),
+	without defining or constraining how this collection is implemented.
+	The items in the NameList are accessible via an integral index, starting from 0.
+
+	Added in DOM level 3
+}
+	INameList = interface
+		['{FF1A79F1-AD3C-4799-98C8-C8FC9E0AAF6C}']
+		function getLength: Integer;
+
+		function getName(const index: Integer): TDOMString;
+		function getNamespaceURI(const Index: Integer): TDOMString;
+		function Contains(const str: TDOMString): Boolean;
+		function ContainsNS(const namespaceURI: TDOMString; const name: TDOMString): Boolean;
+		property Length: Integer read getLength;
 	end;
 
 	TNamespaceURIList = class
@@ -354,6 +396,10 @@ type
 		property documentElement: TElement read GetDocumentElement;
 	end;
 
+{
+	The DOMImplementation interface provides a number of methods for performing operations
+	that are independent of any particular instance of the document object model.
+}
 	DomImplementation = class
 	public
 		class function hasFeature(const feature, version: TDomString): Boolean;
@@ -369,7 +415,7 @@ uses
 	Entities;
 
 const
-	ExceptionMsg: array[INDEX_SIZE_ERR..INVALID_ACCESS_ERR] of String = (
+	ExceptionMsg: array[INDEX_SIZE_ERR..TYPE_MISMATCH_ERR] of string = (
 		'Index or size is negative, or greater than the allowed value',
 		'The specified range of text does not fit into a DOMString',
 		'Node is inserted somewhere it doesn''t belong ',
@@ -384,7 +430,9 @@ const
 		'An invalid or illegal string is specified',
 		'An attempt is made to modify the type of the underlying object',
 		'An attempt is made to create or change an object in a way which is incorrect with regard to namespaces',
-		'A parameter or an operation is not supported by the underlying object'
+		'A parameter or an operation is not supported by the underlying object',
+		'The method would make the Node invalid with respect to "partial validity', //VALIDATION_ERR
+		'The type of the object is incompatible with the expected type of the parameter associated to the object' //TYPE_MISMATCH_ERR
 	);
 
 	ID_NAME = 'id';
