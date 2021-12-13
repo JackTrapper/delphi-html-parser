@@ -3,68 +3,65 @@ unit HTMLParser;
 interface
 
 uses
-  Core;
+  Classes, DomCore, HtmlDom, HtmlTags;
 
 type
-  THTMLDocument = class(TDocument)
+  THtmlParser = class(TCustomParser)
   private
     FCurrentNode: TNode;
     FPreserveWhiteSpace: Boolean;
-    FDepth: Integer;
-    function GetNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetTagNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetEndTagNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetElementNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetAttrNode(const HtmlStr: WideString; var Position: Integer): TAttr;
-    function GetSpecialNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function IsStartDocumentType(const HtmlStr: WideString; var Position: Integer): Boolean;
-    function IsStartCharacterData(const HtmlStr: WideString; var Position: Integer): Boolean;
-    function IsStartComment(const HtmlStr: WideString; var Position: Integer): Boolean;
-    function GetDocumentType(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetCharacterData(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetComment(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetNumericEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetHexEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetDecEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetNamedEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetTextNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetAttrTextNode(const HtmlStr: WideString; var Position: Integer): TNode;
-    function GetMainElement(const tagName: WideString): TElement;
-    function FindThisElement(const tagName: WideString): TElement;
-    function FindParent(const tagName: WideString): TElement;
-    function FindDefParent(const tagName: WideString): TElement;
-    function FindTableParent: TElement;
-    function FindParentElement(tagList: array of WideString): TElement;
-    function IsBlockTag(const tagName: WideString): Boolean;
-    function IsHeadTag(const tagName: WideString): Boolean;
-    function IsEmptyTag(const tagName: WideString): Boolean;
-    function IsPreserveWhiteSpacesTag(const tagName: WideString): Boolean;
-    function IsViewAsBlockTag(const tagName: WideString): Boolean;
-    function IsHiddenTag(const tagName: WideString): Boolean;
-    function NeedFindParentTag(const tagName: WideString): Boolean;
-    function GetDefElementText(Node: TElement): WideString;
-    function GetBlockText(Node: TElement): WideString;
-    function GetAnchorText(Node: TElement): WideString;
-    function GetImageText(Node: TElement): WideString;
-    function GetElementText(Node: TElement): WideString;
-    function GetEntityText(Entity: TEntityReference): WideString;
-    function GetNodeText(Node: TNode): WideString;
-    function GetText: WideString;
-    function GetNodeHtml(Node: TNode): String;
-    function GetHtml: String;
-    procedure ProcessEndTag(EndTag: TEndTag);
-    procedure ProcessElement(Element: TElement);
+    function GetNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetTagNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetEndTagNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetElementNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetAttrNode(const HtmlStr: TDomString; var Position: Integer): TAttr;
+    function GetSpecialNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function IsStartDocumentType(const HtmlStr: TDomString; var Position: Integer): Boolean;
+    function IsStartCharacterData(const HtmlStr: TDomString; var Position: Integer): Boolean;
+    function IsStartComment(const HtmlStr: TDomString; var Position: Integer): Boolean;
+    function GetDocumentType(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetCharacterData(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetComment(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetNumericEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetHexEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetDecEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetNamedEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetTextNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetAttrTextNode(const HtmlStr: TDomString; var Position: Integer): TNode;
+    function GetMainElement(const tagName: TDomString): THtmlElement;
+    function FindThisElement(const tagName: TDomString): THtmlElement;
+    function FindParent(Element: THtmlElement): THtmlElement;
+    function FindDefParent(Element: THtmlElement): THtmlElement;
+    function FindTableParent: THtmlElement;
+    function FindParentElement(tagList: THtmlTagSet): THtmlElement;
+    function IsBlockTag(Element: THtmlElement): Boolean;
+    function IsHeadTag(Element: THtmlElement): Boolean;
+    function IsEmptyTag(Element: THtmlElement): Boolean;
+    function IsPreserveWhiteSpacesTag(Element: THtmlElement): Boolean;
+    function NeedFindParentTag(Element: THtmlElement): Boolean;
+    procedure ProcessEndTag(EndTag: THtmlElement);
+    procedure ProcessElement(Element: THtmlElement);
     procedure ProcessTextNode(TextNode: TTextNode);
-    //procedure ProcessEntity(Entity: TEntityReference);
     procedure ProcessDocumentType(DocumentType: TDocumentType);
-    procedure GetAttrValue(Attr: TAttr; const AttrValueStr: WideString);
+    procedure GetAttrValue(Attr: TAttr; const AttrValueStr: TDomString);
     procedure PrintNode(var F: TextFile; Node: TNode);
   public
-    function loadHTML(const HtmlStr: WideString): Boolean;
-    property text: WideString read GetText;
-    property html: String read GetHtml;
+    function loadHTML(const HtmlStr: TDomString): Boolean; override;
   end;
+
+  TURLSchemes = class(TStringList)
+  private
+    FMaxLen: Integer;
+  public
+    function Add(const S: String): Integer; override;
+    function IsURL(const S: String): Boolean;
+    function GetScheme(const S: String): String;
+    property MaxLen: Integer read FMaxLen;
+  end;
+
+var
+  URLSchemes: TURLSchemes;
 
 implementation
 
@@ -72,81 +69,85 @@ uses
   SysUtils, Entities;
 
 const
-  //form is not included in block elements intensionally
-  BlockTagsCount = 17;
-  BlockTags: array[0..BlockTagsCount - 1] of WideString = (
-    'address', 'blockquote', 'center', 'div', 'dl', 'fieldset', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'noscript', 'ol', 'pre', 'ul'
+{  BlockTagsCount = 19;
+  BlockTags: array[0..BlockTagsCount - 1] of TDomString = (
+    'address', 'blockquote', 'center', 'div', 'dl', 'fieldset', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'noscript', 'ol', 'pre', 'table', 'ul'
   );
 
   BlockParentTagsCount = 19;
-  BlockParentTags: array[0..BlockParentTagsCount - 1] of WideString = (
+  BlockParentTags: array[0..BlockParentTagsCount - 1] of TDomString = (
     'address', 'blockquote', 'center', 'div', 'dl', 'fieldset', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'noscript', 'ol', 'pre', 'td', 'th', 'ul'
   );
 
   HeadTagsCount = 6;
-  HeadTags: array[0..HeadTagsCount - 1] of WideString = (
+  HeadTags: array[0..HeadTagsCount - 1] of TDomString = (
     'base', 'link', 'meta', 'script', 'style', 'title'
   );
 
   EmptyTagsCount = 13;
-  EmptyTags: array[0..EmptyTagsCount - 1] of WideString = (
+  EmptyTags: array[0..EmptyTagsCount - 1] of TDomString = (
     'area', 'base', 'basefont', 'br', 'col', 'frame', 'hr', 'img', 'input', 'isindex', 'link', 'meta', 'param'
   );
 
   PreserveWhiteSpacesTagsCount = 1;
-  PreserveWhiteSpacesTags: array[0..PreserveWhiteSpacesTagsCount - 1] of WideString = (
+  PreserveWhiteSpacesTags: array[0..PreserveWhiteSpacesTagsCount - 1] of TDomString = (
     'pre'
   );
-
+  
   NeedFindParentTagsCount = 14;
-  NeedFindParentTags: array[0..NeedFindParentTagsCount - 1] of WideString = (
+  NeedFindParentTags: array[0..NeedFindParentTagsCount - 1] of TDomString = (
     'col', 'colgroup', 'dd', 'dt', 'li', 'option', 'p', 'table', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr'
   );
-
+  
   ListItemParentTagsCount = 4;
-  ListItemParentTags: array[0..ListItemParentTagsCount - 1] of WideString = (
+  ListItemParentTags: array[0..ListItemParentTagsCount - 1] of TDomString = (
     'dir', 'menu', 'ol', 'ul'
   );
-
+  
   DefItemParentTagsCount = 1;
-  DefItemParentTags: array[0..DefItemParentTagsCount - 1] of WideString = (
+  DefItemParentTags: array[0..DefItemParentTagsCount - 1] of TDomString = (
     'dl'
   );
-
+  
   TableSectionParentTagsCount = 1;
-  TableSectionParentTags: array[0..TableSectionParentTagsCount - 1] of WideString = (
+  TableSectionParentTags: array[0..TableSectionParentTagsCount - 1] of TDomString = (
     'table'
   );
 
   ColParentTagsCount = 1;
-  ColParentTags: array[0..ColParentTagsCount - 1] of WideString = (
+  ColParentTags: array[0..ColParentTagsCount - 1] of TDomString = (
     'colgroup'
   );
 
   RowParentTagsCount = 4;
-  RowParentTags: array[0..RowParentTagsCount - 1] of WideString = (
+  RowParentTags: array[0..RowParentTagsCount - 1] of TDomString = (
     'table', 'tbody', 'tfoot', 'thead'
   );
-
+  
   CellParentTagsCount = 1;
-  CellParentTags: array[0..CellParentTagsCount - 1] of WideString = (
+  CellParentTags: array[0..CellParentTagsCount - 1] of TDomString = (
     'tr'
   );
-
+  
   OptionParentTagsCount = 2;
-  OptionParentTags: array[0..OptionParentTagsCount - 1] of WideString = (
+  OptionParentTags: array[0..OptionParentTagsCount - 1] of TDomString = (
     'optgroup', 'select'
   );
-
-  ViewAsBlockTagsCount = 11;
-  ViewAsBlockTags: array[0..ViewAsBlockTagsCount - 1] of WideString = (
-    'caption', 'dd', 'dt', 'frame', 'iframe', 'li', 'noframes', 'p', 'th', 'td', 'title'
-  );
-
-  HiddenTagsCount = 5;
-  HiddenTags : array[0..HiddenTagsCount - 1] of WideString = (
-    'applet', 'object', 'script', 'select', 'style'
-  );
+}
+  BlockTags: THtmlTagSet               = [ADDRESS_TAG, BLOCKQUOTE_TAG, CENTER_TAG, DIV_TAG, DL_TAG, FIELDSET_TAG, {FORM_TAG,} H1_TAG, H2_TAG, H3_TAG, H4_TAG, H5_TAG, H6_TAG, HR_TAG, NOSCRIPT_TAG, OL_TAG, PRE_TAG, TABLE_TAG, UL_TAG];
+  BlockParentTags: THtmlTagSet         = [ADDRESS_TAG, BLOCKQUOTE_TAG, CENTER_TAG, DIV_TAG, DL_TAG, FIELDSET_TAG, H1_TAG, H2_TAG, H3_TAG, H4_TAG, H5_TAG, H6_TAG, HR_TAG, LI_TAG, NOSCRIPT_TAG, OL_TAG, PRE_TAG, TD_TAG, TH_TAG, UL_TAG];
+  HeadTags: THtmlTagSet                = [BASE_TAG, LINK_TAG, META_TAG, SCRIPT_TAG, STYLE_TAG, TITLE_TAG];
+  {Elements forbidden from having an end tag, and therefore are empty; from HTML 4.01 spec}
+  EmptyTags: THtmlTagSet               = [AREA_TAG, BASE_TAG, BASEFONT_TAG, BR_TAG, COL_TAG, FRAME_TAG, HR_TAG, IMG_TAG, INPUT_TAG, ISINDEX_TAG, LINK_TAG, META_TAG, PARAM_TAG];
+  PreserveWhiteSpacesTags: THtmlTagSet = [PRE_TAG];
+  NeedFindParentTags: THtmlTagSet      = [COL_TAG, COLGROUP_TAG, DD_TAG, DT_TAG, LI_TAG, OPTION_TAG, P_TAG, TABLE_TAG, TBODY_TAG, TD_TAG, TFOOT_TAG, TH_TAG, THEAD_TAG, TR_TAG];
+  ListItemParentTags: THtmlTagSet      = [DIR_TAG, MENU_TAG, OL_TAG, UL_TAG];
+  DefItemParentTags: THtmlTagSet       = [DL_TAG];
+  TableSectionParentTags: THtmlTagSet  = [TABLE_TAG];
+  ColParentTags: THtmlTagSet           = [COLGROUP_TAG];
+  RowParentTags: THtmlTagSet           = [TABLE_TAG, TBODY_TAG, TFOOT_TAG, THEAD_TAG];
+  CellParentTags: THtmlTagSet          = [TR_TAG];
+  OptionParentTags: THtmlTagSet        = [OPTGROUP_TAG, SELECT_TAG];
 
   startTag = Ord('<');
   endTag = Ord('>');
@@ -171,7 +172,7 @@ const
   headTagName = 'head';
   bodyTagName = 'body';
   
-  CRLF: WideString = #13#10#13#10;
+  CRLF: TDomString = #13#10#13#10;
   DocTypeStartStr = 'DOCTYPE';
   DocTypeEndStr = '>';
   CDataStartStr = '[CDATA[';
@@ -181,8 +182,8 @@ const
 
 type
   TDelimiters = set of Byte;
-  
-function Search(const tagName: WideString; tagList: array of WideString): Boolean;
+
+function Search(const tagName: TDomString; tagList: array of TDomString): Boolean;
 var
   I: Integer;
 begin
@@ -291,7 +292,7 @@ begin
   end
 end;
 
-function GetToken(const HtmlStr: WideString; var Position: Integer; Delimiters: TDelimiters): WideString;
+function GetToken(const HtmlStr: TDomString; var Position: Integer; Delimiters: TDelimiters): TDomString;
 var
   Start: Integer;
 begin
@@ -301,13 +302,13 @@ begin
   Result := Copy(HtmlStr, Start, Position - Start)
 end;
 
-procedure SkipWhiteSpaces(const HtmlStr: WideString; var Position: Integer);
+procedure SkipWhiteSpaces(const HtmlStr: TDomString; var Position: Integer);
 begin
   while (Position <= Length(HtmlStr)) and (Ord(HtmlStr[Position]) in WhiteSpace) do
     Inc(Position)
 end;
 
-function MatchAt(const Signature, HtmlStr: WideString; Position: Integer; IgnoreCase: Boolean): Boolean;
+function MatchAt(const Signature, HtmlStr: TDomString; Position: Integer; IgnoreCase: Boolean): Boolean;
 var
   I, J: Integer;
   W1, W2: WideChar;
@@ -326,17 +327,17 @@ begin
   Result := true
 end;
 
-function LeftMatch(const Signature, HtmlStr: WideString): Boolean;
+function LeftMatch(const Signature, HtmlStr: TDomString): Boolean;
 begin
   Result := MatchAt(Signature, HtmlStr, 1, false)
 end;
 
-function RightMatch(const Signature, HtmlStr: WideString): Boolean;
+function RightMatch(const Signature, HtmlStr: TDomString): Boolean;
 begin
   Result := MatchAt(Signature, HtmlStr, Length(HtmlStr) - Length(Signature) + 1, false)
 end;
 
-procedure SkipTo(const Signature, HtmlStr: WideString; var Position: Integer);
+procedure SkipTo(const Signature, HtmlStr: TDomString; var Position: Integer);
 begin
   while Position <= Length(HtmlStr) do
   begin
@@ -349,7 +350,7 @@ begin
   end
 end;
 
-function GetQuotedValue(const HtmlStr: WideString; var Position: Integer): WideString;
+function GetQuotedValue(const HtmlStr: TDomString; var Position: Integer): TDomString;
 var
   QuotedChar: WideChar;
   Start: Integer;
@@ -361,7 +362,7 @@ begin
   Result := Copy(HtmlStr, Start, Position - Start - 1)
 end;
 
-function GetValue(const HtmlStr: WideString; var Position: Integer): WideString;
+function GetValue(const HtmlStr: TDomString; var Position: Integer): TDomString;
 begin
   SkipWhiteSpaces(HtmlStr, Position);
   if Position <= Length(HtmlStr) then
@@ -373,34 +374,7 @@ begin
   end
 end;
 
-
-function TrimLeftSpaces(const S: WideString): WideString;
-var
-  I: Integer;
-begin
-  I := 1;
-  while (I <= Length(S)) and (Ord(S[I]) = SP) do
-    Inc(I);
-  Result := Copy(S, I, Length(S) - I + 1)
-end;
-{
-procedure TCharacterData.trimRight;
-var
-  I: Integer;
-begin
-  I := length;
-  while (I > 0) and IsWhiteSpace(FNodeValue[I]) do
-    Dec(I);
-  SetLength(FNodeValue, I)
-end;
-
-procedure TCharacterData.trimBoth;
-begin
-  trimRight;
-  trimLeft
-end;
-}
-function THTMLDocument.GetNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 begin
   if Position > Length(HtmlStr) then
     Result := nil
@@ -414,7 +388,7 @@ begin
     Result := GetTextNode(HtmlStr, Position)
 end;
 
-function THTMLDocument.GetTagNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetTagNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 begin
   if Position < Length(HtmlStr) then
   begin
@@ -431,26 +405,26 @@ begin
     Result := nil
 end;
 
-function THTMLDocument.GetEndTagNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetEndTagNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 begin
   Inc(Position);
   if Position < Length(HtmlStr) then
   begin
-    Result := TEndTag.Create(Self, LowerCase(GetToken(HtmlStr, Position, tagNameDelimiter)));
+    Result := htmlDocument.createHtmlEndTag(LowerCase(GetToken(HtmlStr, Position, tagNameDelimiter)));
     SkipTo('>', HtmlStr, Position)
   end
   else
     Result := nil
 end;
 
-function THTMLDocument.GetElementNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetElementNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
   Attr: TAttr;
 begin
   if Position < Length(HtmlStr) then
   begin
-    Result := createElement(LowerCase(GetToken(HtmlStr, Position, tagNameDelimiter)));
-    with Result as TElement do
+    Result := htmlDocument.createHtmlElement(LowerCase(GetToken(HtmlStr, Position, tagNameDelimiter)));
+    with Result as THtmlElement do
     begin
       Attr := GetAttrNode(HtmlStr, Position);
       while Attr <> nil do
@@ -471,15 +445,15 @@ begin
     Result := nil
 end;
 
-function THTMLDocument.GetAttrNode(const HtmlStr: WideString; var Position: Integer): TAttr;
+function THtmlParser.GetAttrNode(const HtmlStr: TDomString; var Position: Integer): TAttr;
 var
-  name: WideString;
+  name: TDomString;
 begin
   SkipWhiteSpaces(HtmlStr, Position);
   name := GetToken(HtmlStr, Position, attrNameDelimiter);
   if name <> '' then
   begin
-    Result := createAttribute(LowerCase(name));
+    Result := htmlDocument.createAttribute(LowerCase(name));
     SkipWhiteSpaces(HtmlStr, Position);
     if IsEqualChar(HtmlStr[Position]) then
     begin
@@ -493,7 +467,7 @@ begin
     Result := nil
 end;
 
-procedure THTMLDocument.GetAttrValue(Attr: TAttr; const AttrValueStr: WideString);
+procedure THtmlParser.GetAttrValue(Attr: TAttr; const AttrValueStr: TDomString);
 var
   Position: Integer;
 begin
@@ -507,7 +481,7 @@ begin
   end
 end;
 
-function THTMLDocument.GetSpecialNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetSpecialNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 begin
   if Position < Length(HtmlStr) then
   begin
@@ -527,24 +501,24 @@ begin
     Result := nil
 end;
 
-function THTMLDocument.IsStartDocumentType(const HtmlStr: WideString; var Position: Integer): Boolean;
+function THtmlParser.IsStartDocumentType(const HtmlStr: TDomString; var Position: Integer): Boolean;
 begin
   Result := MatchAt(DocTypeStartStr, HtmlStr, Position, true) 
 end;
 
-function THTMLDocument.IsStartCharacterData(const HtmlStr: WideString; var Position: Integer): Boolean;
+function THtmlParser.IsStartCharacterData(const HtmlStr: TDomString; var Position: Integer): Boolean;
 begin
   Result := MatchAt(CDataStartStr, HtmlStr, Position, false)
 end;
 
-function THTMLDocument.IsStartComment(const HtmlStr: WideString; var Position: Integer): Boolean;
+function THtmlParser.IsStartComment(const HtmlStr: TDomString; var Position: Integer): Boolean;
 begin
   Result := MatchAt(CommentStartStr, HtmlStr, Position, false)
 end;
 
-function THTMLDocument.GetDocumentType(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetDocumentType(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
-  name, publicID, systemID: WideString;
+  name, publicID, systemID: TDomString;
 begin
   Inc(Position, Length(DocTypeStartStr));
   SkipWhiteSpaces(HtmlStr, Position);
@@ -558,31 +532,31 @@ begin
     systemID := GetQuotedValue(HtmlStr, Position)
   else
     systemID := '';
-  Result := createDocType(name, publicID, systemID);
+  Result := HtmlDomImplementation.createDocumentType(name, publicID, systemID);
   SkipTo(DocTypeEndStr, HtmlStr, Position)
 end;
 
-function THTMLDocument.GetCharacterData(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetCharacterData(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
   StartPos: Integer;
 begin
   Inc(Position, Length(CDataStartStr));
   StartPos := Position;
   SkipTo(CDataEndStr, HtmlStr, Position);
-  Result := createCDATASection(Copy(HtmlStr, StartPos, Position - StartPos - Length(CDataEndStr) + 1))
+  Result := htmlDocument.createCDATASection(Copy(HtmlStr, StartPos, Position - StartPos - Length(CDataEndStr) + 1))
 end;
 
-function THTMLDocument.GetComment(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetComment(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
   StartPos: Integer;
 begin
   Inc(Position, Length(CommentStartStr));
   StartPos := Position;
   SkipTo(CommentEndStr, HtmlStr, Position);
-  Result := createComment(Copy(HtmlStr, StartPos, Position - StartPos - Length(CommentEndStr)))
+  Result := htmlDocument.createComment(Copy(HtmlStr, StartPos, Position - StartPos - Length(CommentEndStr)))
 end;
 
-function THTMLDocument.GetEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 begin
   if Position < Length(HtmlStr) then
   begin
@@ -596,10 +570,10 @@ begin
       Result := GetNamedEntityNode(HtmlStr, Position)
   end
   else
-    Result := createTextNode(HtmlStr[Position])
+    Result := htmlDocument.createTextNode(HtmlStr[Position])
 end;
 
-function THTMLDocument.GetTextNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetTextNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
   Start: Integer;
 begin
@@ -607,10 +581,10 @@ begin
   repeat
     Inc(Position)
   until (Position > Length(HtmlStr)) or IsStartMarkupChar(HtmlStr[Position]);
-  Result := createTextNode(Copy(HtmlStr, Start, Position - Start))
+  Result := htmlDocument.createTextNode(Copy(HtmlStr, Start, Position - Start))
 end;
 
-function THTMLDocument.GetAttrTextNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetAttrTextNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
   Start: Integer;
 begin
@@ -618,10 +592,10 @@ begin
   repeat
     Inc(Position)
   until (Position > Length(HtmlStr)) or IsStartEntityChar(HtmlStr[Position]);
-  Result := createTextNode(Copy(HtmlStr, Start, Position - Start))
+  Result := htmlDocument.createTextNode(Copy(HtmlStr, Start, Position - Start))
 end;
 
-function THTMLDocument.GetHexEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetHexEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
   Start: Integer;
   Value: Word;
@@ -635,14 +609,14 @@ begin
   end;
   if (Position <= Length(HtmlStr)) and IsEndEntityChar((HtmlStr[Position])) then
   begin
-    Result := createTextNode(WideChar(Value));
+    Result := htmlDocument.createTextNode(WideChar(Value));
     Inc(Position)
   end
   else
-    Result := createTextNode(Copy(HtmlStr, Start, Position - Start))
+    Result := htmlDocument.createTextNode(Copy(HtmlStr, Start, Position - Start))
 end;
 
-function THTMLDocument.GetDecEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetDecEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
   Start: Integer;
   Value: Word;
@@ -656,14 +630,14 @@ begin
   end;
   if (Position <= Length(HtmlStr)) and IsEndEntityChar((HtmlStr[Position])) then
   begin
-    Result := createTextNode(WideChar(Value));
+    Result := htmlDocument.createTextNode(WideChar(Value));
     Inc(Position)
   end
   else
-    Result := createTextNode(Copy(HtmlStr, Start, Position - Start))
+    Result := htmlDocument.createTextNode(Copy(HtmlStr, Start, Position - Start))
 end;
 
-function THTMLDocument.GetNumericEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetNumericEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 begin
   if IsHexEntity(HtmlStr[Position]) then
   begin
@@ -674,7 +648,7 @@ begin
     Result := GetDecEntityNode(HtmlStr, Position)
 end;
 
-function THTMLDocument.GetNamedEntityNode(const HtmlStr: WideString; var Position: Integer): TNode;
+function THtmlParser.GetNamedEntityNode(const HtmlStr: TDomString; var Position: Integer): TNode;
 var
   Start: Integer;
 begin
@@ -683,33 +657,41 @@ begin
     Inc(Position);
   if (Position <= Length(HtmlStr)) and IsEndEntityChar((HtmlStr[Position])) then
   begin
-    Result := createEntityReference(Copy(HtmlStr, Start, Position - Start));
+    Result := htmlDocument.createEntityReference(Copy(HtmlStr, Start, Position - Start));
     Inc(Position)
   end
   else
-    Result := createTextNode(Copy(HtmlStr, Start, Position - Start))
+    Result := htmlDocument.createTextNode(Copy(HtmlStr, Start, Position - Start))
 end;
                                       
-function THTMLDocument.GetMainElement(const tagName: WideString): TElement;
+function THtmlParser.GetMainElement(const tagName: TDomString): THtmlElement;
+var
+  child: TNode;
+  I: Integer;
 begin
-  if documentElement = nil then
-    appendChild(createElement(htmlTagName));
-  Result := documentElement.childNodes.findElement(tagName);
-  if Result = nil then
+  if htmlDocument.documentElement = nil then
+    htmlDocument.appendChild(htmlDocument.createHtmlElement(htmlTagName));
+  for I := 0 to htmlDocument.documentElement.childNodes.length - 1 do
   begin
-    Result := createElement(tagName);
-    documentElement.appendChild(Result)
-  end
+    child := htmlDocument.documentElement.childNodes.item(I);
+    if (child.nodeType = ELEMENT_NODE) and (child.nodeName = tagName) then
+    begin
+      Result := child as THtmlElement;
+      Exit
+    end
+  end;
+  Result := htmlDocument.createHtmlElement(tagName);
+  htmlDocument.documentElement.appendChild(Result)
 end;
 
-function THTMLDocument.FindThisElement(const tagName: WideString): TElement;
+function THtmlParser.FindThisElement(const tagName: TDomString): THtmlElement;
 var
   Node: TNode;
 begin
   Node := FCurrentNode;
-  while Node is TElement do
+  while Node.nodeType = ELEMENT_NODE do
   begin
-    Result := Node as TElement;
+    Result := Node as THtmlElement;
     if Result.tagName = tagName then
       Exit;
     Node := Node.parentNode
@@ -717,149 +699,146 @@ begin
   Result := nil
 end;
 
-function THTMLDocument.FindParentElement(tagList: array of WideString): TElement;
+function THtmlParser.FindParentElement(tagList: THtmlTagSet): THtmlElement;
 var
   Node: TNode;
 begin
   Node := FCurrentNode;
-  while Node is TElement do
+  while Node.nodeType = ELEMENT_NODE do
   begin
-    Result := Node as TElement;
-    if Search(Result.tagName, tagList) then
+    Result := Node as THtmlElement;
+    if Result.HtmlTag.Number in tagList then
+    //if Search(Result.tagName, tagList) then
       Exit;
     Node := Node.parentNode
   end;
   Result := nil
 end;
 
-function THTMLDocument.FindDefParent(const tagName: WideString): TElement;
+function THtmlParser.FindDefParent(Element: THtmlElement): THtmlElement;
 begin
-  if (tagName = headTagName) or (tagName = bodyTagName) then
-    Result := appendChild(createElement(htmlTagName)) as TElement
+  if (Element.tagName = headTagName) or (Element.tagName = bodyTagName) then
+    Result := htmlDocument.appendChild(htmlDocument.createHtmlElement(htmlTagName)) as THtmlElement
   else
-  if IsHeadTag(tagName) then
+  if IsHeadTag(Element) then
     Result := GetMainElement(headTagName)
   else
     Result := GetMainElement(bodyTagName)
 end;
 
-function THTMLDocument.FindTableParent: TElement;
+function THtmlParser.FindTableParent: THtmlElement;
 var
   Node: TNode;
 begin
   Node := FCurrentNode;
-  while Node is TElement do
+  while Node.nodeType = ELEMENT_NODE do
   begin
-    Result := Node as TElement;
-    if (Result.tagName = 'td') or IsBlockTag(Result.tagName) then
+    Result := Node as THtmlElement;
+    if (Result.tagName = 'td') or IsBlockTag(Result) then
       Exit;
     Node := Node.parentNode
   end;
   Result := GetMainElement(bodyTagName)
 end;
 
-function THTMLDocument.FindParent(const tagName: WideString): TElement;
+function THtmlParser.FindParent(Element: THtmlElement): THtmlElement;
 begin
-  if (tagName = 'p') or IsBlockTag(tagName) then
+  if (Element.tagName = 'p') or IsBlockTag(Element) then
     Result := FindParentElement(BlockParentTags)
   else
-  if tagName = 'li' then
+  if Element.tagName = 'li' then
     Result := FindParentElement(ListItemParentTags)
   else
-  if (tagName = 'dd') or (tagName = 'dt') then
+  if (Element.tagName = 'dd') or (Element.tagName = 'dt') then
     Result := FindParentElement(DefItemParentTags)
   else
-  if (tagName = 'td') or (tagName = 'th') then
+  if (Element.tagName = 'td') or (Element.tagName = 'th') then
     Result := FindParentElement(CellParentTags)
   else
-  if tagName = 'tr' then
+  if Element.tagName = 'tr' then
     Result := FindParentElement(RowParentTags)
   else
-  if tagName = 'col' then
+  if Element.tagName = 'col' then
     Result := FindParentElement(ColParentTags)
   else
-  if (tagName = 'colgroup') or (tagName = 'thead') or (tagName = 'tfoot') or (tagName = 'tbody') then
+  if (Element.tagName = 'colgroup') or (Element.tagName = 'thead') or (Element.tagName = 'tfoot') or (Element.tagName = 'tbody') then
     Result := FindParentElement(TableSectionParentTags)
   else
-  if tagName = 'table' then
+  if Element.tagName = 'table' then
     Result := FindTableParent
   else
-  if tagName = 'option' then
+  if Element.tagName = 'option' then
     Result := FindParentElement(OptionParentTags)
   else
-  if (tagName = headTagName) or (tagName = bodyTagName) then
-    Result := documentElement
+  if (Element.tagName = headTagName) or (Element.tagName = bodyTagName) then
+    Result := htmlDocument.documentElement as THtmlElement
   else
     Result := nil;
   if Result = nil then
-    Result := FindDefParent(tagName)
+    Result := FindDefParent(Element)
 end;
 
-function THTMLDocument.IsBlockTag(const tagName: WideString): Boolean;
+function THtmlParser.IsBlockTag(Element: THtmlElement): Boolean;
 begin
-  Result := Search(tagName, BlockTags)
+  if (Element = nil) or (Element.HtmlTag = nil) then
+    raise Exception.Create(Element.tagName);
+  Result := Element.HtmlTag.Number in BlockTags //Search(tagName, BlockTags)
 end;
 
-function THTMLDocument.IsHeadTag(const tagName: WideString): Boolean;
+function THtmlParser.IsHeadTag(Element: THtmlElement): Boolean;
 begin
-  Result := Search(tagName, HeadTags)
+  Result := Element.HtmlTag.Number in HeadTags //Search(tagName, HeadTags)
 end;
 
-function THTMLDocument.IsViewAsBlockTag(const tagName: WideString): Boolean;
+function THtmlParser.IsEmptyTag(Element: THtmlElement): Boolean;
 begin
-  Result := IsBlockTag(tagName) or Search(tagName, ViewAsBlockTags)
+  Result := Element.HtmlTag.Number in EmptyTags //Search(tagName, EmptyTags)
 end;
-                                       
-function THTMLDocument.IsHiddenTag(const tagName: WideString): Boolean;
+
+function THtmlParser.IsPreserveWhiteSpacesTag(Element: THtmlElement): Boolean;
 begin
-  Result := Search(tagNAme, HiddenTags)
+  Result := Element.HtmlTag.Number in PreserveWhiteSpacesTags //Search(tagName, PreserveWhiteSpacesTags)
 end;
 
-function THTMLDocument.IsEmptyTag(const tagName: WideString): Boolean;
+function THtmlParser.NeedFindParentTag(Element: THtmlElement): Boolean;
 begin
-  Result := Search(tagName, EmptyTags)
+  Result := IsBlockTag(Element) or (Element.HtmlTag.Number in NeedFindParentTags) //Search(Element.tagName, NeedFindParentTags)
 end;
 
-function THTMLDocument.IsPreserveWhiteSpacesTag(const tagName: WideString): Boolean;
-begin
-  Result := Search(tagName, PreserveWhiteSpacesTags)
-end;
-
-function THTMLDocument.NeedFindParentTag(const tagName: WideString): Boolean;
-begin                                   
-  Result := IsBlockTag(tagName) or Search(tagName, NeedFindParentTags)
-end;
-
-procedure THTMLDocument.ProcessEndTag(EndTag: TEndTag);
+procedure THtmlParser.ProcessEndTag(EndTag: THtmlElement);
 var
-  Node: TElement;
-begin                           
-  if IsPreserveWhiteSpacesTag(EndTag.tagName) then
-    FPreserveWhiteSpace := false;
+  Node: THtmlElement;
+begin
+  try
+    if IsPreserveWhiteSpacesTag(EndTag) then
+      FPreserveWhiteSpace := false;
 {
   if EndTag.tagName = 'center' then
   begin
     FPreserveWhiteSpace := false;
   end;
 }
-  Node := FindThisElement(EndTag.tagName);
-  if Node <> nil then
-    FCurrentNode := Node.parentNode
-  else
-  if IsBlockTag(EndTag.tagName) then
-    raise DomException.Create(HIERARCHY_REQUEST_ERR)
+    Node := FindThisElement(EndTag.tagName);
+    if Node <> nil then
+      FCurrentNode := Node.parentNode
+    else
+    if IsBlockTag(EndTag) then
+      raise DomException.Create(HIERARCHY_REQUEST_ERR)
+  finally
+    EndTag.Free
+  end
 end;
 
-procedure THTMLDocument.ProcessElement(Element: TElement);
+procedure THtmlParser.ProcessElement(Element: THtmlElement);
 var
-  Node: TElement;
+  Node: THtmlElement;
 begin
-  Element.IsEmpty := IsEmptyTag(Element.tagName);
-  if IsPreserveWhiteSpacesTag(Element.tagName) then
+  Element.IsEmpty := IsEmptyTag(Element);
+  if IsPreserveWhiteSpacesTag(Element) then
     FPreserveWhiteSpace := true;
-  if NeedFindParentTag(Element.tagName) then
+  if NeedFindParentTag(Element) then
   begin
-    Node := FindParent(Element.tagName);
+    Node := FindParent(Element);
     if Node = nil then
       raise DomException.Create(HIERARCHY_REQUEST_ERR);
     FCurrentNode := Node
@@ -869,15 +848,15 @@ begin
     FCurrentNode := Element
 end;
 
-procedure THTMLDocument.ProcessTextNode(TextNode: TTextNode);
+procedure THtmlParser.ProcessTextNode(TextNode: TTextNode);
 begin
-  if FCurrentNode is TElement then
+  if FCurrentNode.nodeType = ELEMENT_NODE then
   begin
     if not FPreserveWhiteSpace then
       TextNode.normalizeWhiteSpace;
     if TextNode.length <> 0 then
     begin
-      if FCurrentNode.lastChild is TTextNode then
+      if (FCurrentNode.lastChild <> nil) and (FCurrentNode.lastChild.nodeType = TEXT_NODE) then
       begin
         (FCurrentNode.lastChild as TTextNode).appendData(TextNode.data);
         TextNode.Free
@@ -887,22 +866,13 @@ begin
     end
   end
 end;
-{
-procedure THTMLDocument.ProcessEntity(Entity: TEntityReference);
-var
-  TextNode: TTextNode;
+
+procedure THtmlParser.ProcessDocumentType(DocumentType: TDocumentType);
 begin
-  TextNode := createTextNode(GetEntValue(Entity.name));
-  ProcessTextNode(TextNode);
-  Entity.Free
-end;
-}
-procedure THTMLDocument.ProcessDocumentType(DocumentType: TDocumentType);
-begin
-  doctype := DocumentType
+  //TODO doctype := DocumentType
 end;
 
-function THTMLDocument.loadHTML(const HtmlStr: WideString): Boolean;
+function THtmlParser.loadHTML(const HtmlStr: TDomString): Boolean;
 var
   Node: TNode;
   Position: Integer;
@@ -910,24 +880,24 @@ var
 begin
   Position := 1;
   try
-    Clear;
-    FCurrentNode := Self;
+    htmlDocument.Clear;
+    FCurrentNode := htmlDocument;
     Node := GetNode(HtmlStr, Position);
     while Node <> nil do
     begin
-      if Node is TEndTag then
-        ProcessEndTag(Node as TEndTag)
+      if Node.nodeType = END_TAG_NODE then
+        ProcessEndTag(Node as THtmlEndTag)
       else
-      if Node is TElement then
-        ProcessElement(Node as TElement)
+      if Node.nodeType = ELEMENT_NODE then
+        ProcessElement(Node as THtmlElement)
       else
-      if Node is TTextNode then
+      if Node.nodeType = TEXT_NODE then
         ProcessTextNode(Node as TTextNode)
       else
 {      if Node is TEntityReference then
         ProcessEntity(Node as TEntityReference)
       else}
-      if Node is TDocumentType then
+      if Node.nodeType = DOCUMENT_TYPE_NODE then
         ProcessDocumentType(Node as TDocumentType)
       else
         //Node.Free;
@@ -944,185 +914,81 @@ begin
   CloseFile(F)}
 end;
 
-procedure THTMLDocument.PrintNode(var F: TextFile; Node: TNode);
+procedure THtmlParser.PrintNode(var F: TextFile; Node: TNode);
 var
   S: String;
   I: Integer;
 begin
-  if Node is TElement then
+  if Node.nodeType = ELEMENT_NODE then
   begin
-    S := '<' + (Node as TElement).tagName;
-    if (Node as TElement).IsEmpty then
+    S := '<' + (Node as THtmlElement).tagName;
+    if (Node as THtmlElement).IsEmpty then
       S := S + '/';
     S := S + '>';
     Write(F, S)
   end;
   for I := 0 to Node.childNodes.length - 1 do
     PrintNode(F, Node.childNodes.item(I));
-  if Node is TElement then
+  if Node.nodeType = ELEMENT_NODE then
   begin
-    S := '</' + (Node as TElement).tagName;
+    S := '</' + (Node as THtmlElement).tagName;
     S := S + '>';
     Write(F, S)
   end;
 end;
 
-function AppendNewLine(const S: WideString): WideString;
+function AppendNewLine(const S: TDomString): TDomString;
 begin
   Result := S;
   if (S <> '') and not RightMatch(CRLF, S) then
     Result := Result + CRLF
 end;
 
-function AppendText(const S1, S2: WideString): WideString;
+function TURLSchemes.Add(const S: String): Integer;
 begin
-  if RightMatch(CRLF, S1) then
-  begin
-    Result := S1;
-    Result := Result + TrimLeft(S2)
-  end
-  else
-  if LeftMatch(CRLF, S2) then
-  begin
-    Result := TrimRight(S1);
-    Result := Result + S2
-  end
-  else
-  if (S1 = '') or IsWhiteSpace(S1[Length(S1)]) then
-  begin
-    Result := S1;
-    Result := Result + TrimLeftSpaces(S2)
-  end
-  else
-  begin
-    Result := S1;
-    Result := Result + S2
-  end
+  if Length(S) > FMaxLen then
+    FMaxLen := Length(S);
+  Result := inherited Add(S)
 end;
 
-function THTMLDocument.GetDefElementText(Node: TElement): WideString;
+function TURLSchemes.IsURL(const S: String): Boolean;
+begin
+  Result := IndexOf(LowerCase(S)) >= 0
+end;
+
+function TURLSchemes.GetScheme(const S: String): String;
+const
+  SchemeChars = [Ord('A')..Ord('Z'), Ord('a')..Ord('z')];
 var
   I: Integer;
 begin
   Result := '';
-  if not IsHiddenTag(Node.tagName) then
-    for I := 0 to Node.childNodes.length - 1 do
-      Result := AppendText(Result, GetNodeText(Node.childNodes.item(I)))
-end;
-
-function THTMLDocument.GetBlockText(Node: TElement): WideString;
-begin
-  Result := Trim(GetDefElementText(Node));
-  if Result <> '' then
+  for I := 1 to MaxLen + 1 do
   begin
-    if Node.tagName = 'li' then
-      Result := '* ' + Result;
-    Result := CRLF + Result;
-    Result := Result + CRLF
-  end
-end;
-
-function THTMLDocument.GetAnchorText(Node: TElement): WideString;
-var
-  Attr: TAttr;
-begin
-  Result := GetDefElementText(Node);
-  if Node.hasAttribute('href') then
-  begin
-    Attr := Node.getAttributeNode('href');
-    if Attr.value <> Result then
-      Result := Result + ' ' + Attr.value
-  end
-end;
-                                    
-function THTMLDocument.GetImageText(Node: TElement): WideString;
-begin
-  if Node.hasAttribute('alt') then
-    Result := Node.getAttributeNode('alt').value
-  else
-    Result := ''
-end;
-
-function THTMLDocument.GetElementText(Node: TElement): WideString;
-begin
-  if Node.tagName = 'br' then
-    Result := CRLF
-  else
-  if Node.tagName = 'a' then
-    Result := GetAnchorText(Node)
-  else
-  if Node.tagName = 'img' then
-    Result := GetImageText(Node)
-  else
-  if IsViewAsBlockTag(Node.tagName) then
-    Result := GetBlockText(Node)
-  else
-    Result := GetDefElementText(Node)
-end;
-
-function THTMLDocument.GetEntityText(Entity: TEntityReference): WideString;
-begin
-  if Entity.name = 'nbsp' then
-    Result := ' '
-  else
-    Result := GetEntValue(Entity.name)
-end;
-
-function THTMLDocument.GetNodeText(Node: TNode): WideString;
-begin
-  if Node is TElement then
-    Result := GetElementText(Node as TElement)
-  else
-  if Node is TTextNode then
-    Result := Node.nodeValue
-  else
-  if Node is TEntityReference then
-    Result := GetEntityText(Node as TEntityReference)
-  else
-    Result := ''
-end;
-
-function THTMLDocument.GetText: WideString;
-begin
-  if documentElement <> nil then
-    Result := Trim(GetNodeText(documentElement))
-  else
-    Result := ''
-end;
-
-function THTMLDocument.GetNodeHtml(Node: TNode): String;
-var
-  I: Integer;
-begin
-  if Node is TElement then
-  begin
-    Inc(FDepth);
-    Result := #13#10'<' + (Node as TElement).tagName;
-    if (Node as TElement).IsEmpty then
-      Result := Result + '/';
-    Result := Result + '>';
-    for I := 0 to Node.childNodes.length - 1 do
-      Result := Result + GetNodeHtml(Node.childNodes.item(I));
-    if not (Node as TElement).IsEmpty then
+    if I > Length(S) then
+      Exit;
+    if S[I] = ':' then
     begin
-      Result := Result + '</' + (Node as TElement).tagName;
-      Result := Result + '>'
+      if IsURL(Copy(S, 1, I - 1)) then
+        Result := Copy(S, 1, I - 1);
+      Exit
     end
   end
-  else
-  if Node.nodeValue <> ' ' then
-    Result := Node.nodeValue
-  else
-    Result := ''
 end;
 
-function THTMLDocument.GetHtml: String;
-begin
-  FDepth := 0;
-  if documentElement <> nil then
-    Result := GetNodeHTML(documentElement)
-  else
-    Result := ''
-end;
+initialization
+
+  URLSchemes := TURLSchemes.Create;
+  URLSchemes.Add('http');
+  URLSchemes.Add('https');
+  URLSchemes.Add('ftp');
+  URLSchemes.Add('mailto');
+  URLSchemes.Add('news');
+  URLSchemes.Add('nntp');
+  URLSchemes.Add('gopher');
+
+finalization
+
+  URLSchemes.Free
 
 end.
