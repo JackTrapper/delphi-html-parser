@@ -46,6 +46,7 @@ type
     function GetDefElementText(Node: TElement): WideString;
     function GetBlockText(Node: TElement): WideString;
     function GetAnchorText(Node: TElement): WideString;
+    function GetImageText(Node: TElement): WideString;
     function GetElementText(Node: TElement): WideString;
     function GetEntityText(Entity: TEntityReference): WideString;
     function GetNodeText(Node: TNode): WideString;
@@ -478,7 +479,7 @@ begin
   name := GetToken(HtmlStr, Position, attrNameDelimiter);
   if name <> '' then
   begin
-    Result := createAttribute(name);
+    Result := createAttribute(LowerCase(name));
     SkipWhiteSpaces(HtmlStr, Position);
     if IsEqualChar(HtmlStr[Position]) then
     begin
@@ -1033,14 +1034,25 @@ begin
       Result := Result + ' ' + Attr.value
   end
 end;
+                                    
+function THTMLDocument.GetImageText(Node: TElement): WideString;
+begin
+  if Node.hasAttribute('alt') then
+    Result := Node.getAttributeNode('alt').value
+  else
+    Result := ''
+end;
 
 function THTMLDocument.GetElementText(Node: TElement): WideString;
-begin 
+begin
   if Node.tagName = 'br' then
     Result := CRLF
   else
   if Node.tagName = 'a' then
     Result := GetAnchorText(Node)
+  else
+  if Node.tagName = 'img' then
+    Result := GetImageText(Node)
   else
   if IsViewAsBlockTag(Node.tagName) then
     Result := GetBlockText(Node)
