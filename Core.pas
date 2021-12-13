@@ -106,6 +106,8 @@ type
     property ownerDocument: TDocument read FOwnerDocument;
   end;
 
+  TElement = class;
+  
   TNodeList = class
   private
     FList: TList;
@@ -124,6 +126,7 @@ type
     function lastNode: TNode;
     function previousNode(currNode: TNode): TNode;
     function nextNode(currNode: TNode): TNode;
+    function findElement(const name: WideString): TElement; 
     property length: Integer read GetLength;
   end;
 
@@ -150,8 +153,6 @@ type
     property data: WideString read GetNodeValue write SetNodeValue;
     property length: Integer read GetLength;
   end;
-
-  TElement = class;
 
   TAttr = class(TNode)
   private
@@ -520,6 +521,19 @@ begin
     Result := nil
 end;
 
+function TNodeList.findElement(const name: WideString): TElement;
+var
+  I: Integer;
+begin
+  for I := 0 to length - 1 do
+  begin
+    Result := FList[I];
+    if (Result is TElement) and (Result.nodeName = name) then
+      Exit
+  end;
+  Result := nil
+end;
+
 procedure TNodeList.Clear;
 var
   I: Integer;
@@ -724,7 +738,7 @@ begin
     if Node.nodeType = ENTITY_REFERENCE_NODE then
     begin
       Inc(Pos);
-      Result[Pos] := WideChar(GetEntValue(Node.nodeName))
+      Result[Pos] := GetEntValue(Node.nodeName)
     end
   end
 end;
@@ -905,7 +919,7 @@ end;
 
 function TDocument.insertBefore(newChild, refChild: TNode): TNode;
 begin
-  if not (newChild.nodeType in [ELEMENT_NODE, COMMENT_NODE, PROCESSING_INSTRUCTION_NODE]) then
+  if not (newChild.nodeType in [ELEMENT_NODE, TEXT_NODE, COMMENT_NODE, PROCESSING_INSTRUCTION_NODE]) then
     raise DomException.Create(HIERARCHY_REQUEST_ERR);
   if (newChild.nodeType = ELEMENT_NODE) and (documentElement <> nil) then
     raise DomException.Create(HIERARCHY_REQUEST_ERR);

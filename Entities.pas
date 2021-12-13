@@ -5,7 +5,7 @@ interface
 const
   MaxEntNameLen = 8;
   
-function GetEntValue(const Name: String): Word;
+function GetEntValue(const Name: String): WideChar;
 function GetEntName(Code: Word): String;
 
 implementation
@@ -291,7 +291,7 @@ type
   end;
 
 var
-  EntList: TEntList;
+  EntityList: TEntList;
 
 function EntCompare(Ent1, Ent2: Pointer): Integer;
 begin
@@ -332,9 +332,9 @@ begin
   Result := 0
 end;
 
-function GetEntValue(const Name: String): Word;
+function GetEntValue(const Name: String): WideChar;
 begin
-  Result := EntList.Code[Name]
+  Result := WideChar(EntityList.Code[Name])
 end;
 
 function GetEntName(Code: Word): String;
@@ -352,6 +352,6 @@ end;
 
 initialization
 
-  EntList := TEntList.Create
+  EntityList := TEntList.Create
 
 end.
