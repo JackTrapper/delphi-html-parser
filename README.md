@@ -30,9 +30,37 @@ Implementation
 
 Parser is implemented as several modules:
 
-- Core.pas - core DOM implementation
-- Entities.pas - HTML character definitions
-- HmlParser.pas - HTML parser
+- `DomCore.pas` - core DOM implementation
+- `Entities.pas` - HTML character definitions
+- `HtmlTags.pas` - HTML tags atributes
+- `HtmlReader.pas` - lexical analyzer
+- `HmlParser.pas` - HTML parser
+- `Formatter.pas` - HTML DOM tree converters
+
+Sample Usage
+============
+
+1. Parse string into **TDocument**
+ 
+To convert a string containing HTML text, into a **TDocument** object, use the **THTMLParser** object. 
+
+```
+var
+   doc: TDocument;
+   
+doc := THTMLParser.Parse('<HTML><BODY>Hello, world!</BODY></HTML');
+```
+
+2. Get full HTML text from a **TDocument**
+
+To convert a **TDocument** into an HTML string, use the **THtmlFormatter** class in `Formatter.pas`:
+
+```
+var
+   html: string;
+   
+html := THtmlFormatter.OuterHtml(doc);
+```
 
 
 http://htmlp.sourceforge.net/
