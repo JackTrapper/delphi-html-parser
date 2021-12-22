@@ -42,6 +42,9 @@ unit HtmlReader;
 
 	Version History
 	===============
+	12/22/2021
+		- LowerCase the doctype name
+		- Doctype publicid and systemid can also be enclosed in apostrophe in addition to QUOTATION MARK
 	12/20/2021
 		- Fixed ReadQuotedStr to not also return the final '"' character.
 		  (only used by doctype reading)
@@ -485,7 +488,11 @@ begin
 	name := GetToken(tagNameDelimiter); //"HTML"
 	if name = '' then
 		Exit;
-	SetNodeName(name);
+
+	//https://html.spec.whatwg.org/#before-doctype-name-state
+	//doctype names are to be lowercased.
+	//Set the token's name to the lowercase version of the current input character (add 0x0020 to the character's code point)
+	SetNodeName(LowerCase(name));
 	SkipWhiteSpaces;
 	keyword := GetToken(tagNameDelimiter); //"PUBLIC" or "SYSTEM"
 	SkipWhiteSpaces;
@@ -497,7 +504,10 @@ begin
 	end;
 
 	SkipWhiteSpaces;
-	if FHtmlStr[FPosition] = '"' then
+
+	//https://html.spec.whatwg.org/#before-doctype-system-identifier-state
+	//Both QUOTATION MARK and APOSTROPHE are allowed
+	if (FHtmlStr[FPosition] = '"') or (FHtmlStr[FPosition] = '''') then
 	begin
 		if not ReadQuotedValue(FSystemID) then
 			FSystemID := '';
@@ -628,7 +638,7 @@ var
 	quotedChar: WideChar;
 	start: Integer;
 begin
-	quotedChar := FHtmlStr[FPosition];
+	quotedChar := FHtmlStr[FPosition]; //the quotation character will usually be " (quotation mark), but can also be ' (apostrophe)
 	Inc(FPosition);
 	start := FPosition;
 	Result := SkipTo(quotedChar);
