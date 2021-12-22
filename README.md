@@ -6,24 +6,19 @@ Initialization
 
 Today we see more and more email messages formatted as HTML. For me the email is plain text medium (with attachments) and I don't use WebBrowser or Mozilla object as a message browser in my [email client](http://dlg.krakow.pl/tabmail/). So I'm write quick and dirty HTML parser instead. It seems enough to parse email messages but some work is needed to shift them to more general purpose HTML parser.
 
-To-Do list:
-
-- less restrictive when parsing poorly formatted HTML
-- increase speed
-- smarter conversion to plain text
 
 Interface
 ---------
 
-TDocument, TNode, TElement, TAttr etc. implements [DOM2](http://www.w3.org/DOM/DOMTR) Core.
+TDocument, TNode, TElement, TAttr etc. implement [DOM2](http://www.w3.org/DOM/DOMTR) Core.
 
 THtmlParser produces TDocument from HTML string.
 
-    function parseString(const HtmlStr: TDomString): TDocument;
+    class function Parse(const HtmlStr: TDomString): TDocument;
 
-THtmlParser uses THtmlReader a event driven SAX-like interface.
+THtmlParser uses THtmlReader - an event-driven SAX-like interface that performs the actual processing of the html string.
 
-To convert DOM tree to plain text or HTML use TTextFormatter or THtmlFormatter respectively.
+To convert DOM tree to plain text or HTML use **TTextFormatter** or **THtmlFormatter** respectively.
 
 Implementation
 --------------
@@ -31,35 +26,103 @@ Implementation
 Parser is implemented as several modules:
 
 - `DomCore.pas` - core DOM implementation
+- `HmlParser.pas` - Parses HTML into a Document
+- `HtmlReader.pas` - lexical analyzer for parsing HTML
 - `Entities.pas` - HTML character definitions
-- `HtmlTags.pas` - HTML tags atributes
-- `HtmlReader.pas` - lexical analyzer
-- `HmlParser.pas` - HTML parser
+- `HtmlTags.pas` - HTML tags attributes
 - `Formatter.pas` - HTML DOM tree converters
 
-Sample Usage
-============
+Programming Guide
+-----------------
 
-1. Parse string into **TDocument**
- 
-To convert a string containing HTML text, into a **TDocument** object, use the **THTMLParser** object. 
+**Example 1** &mdash; Parse HTML into **TDocument** object
+
+To convert a string containing HTML, into a DOM **TDocument** object, use the **THTMLParser.Parse**:
 
 ```
 var
    doc: TDocument;
-   
-doc := THTMLParser.Parse('<HTML><BODY>Hello, world!</BODY></HTML');
+
+   doc := THTMLParser.Parse('<!DOCTYPE html><HTML><BODY>Hello, world!</BODY></HTML>');
 ```
 
-2. Get full HTML text from a **TDocument**
+---------
 
-To convert a **TDocument** into an HTML string, use the **THtmlFormatter** class in `Formatter.pas`:
+**Example 2** &mdash; Get full HTML text from a **TDocument**
+
+
+To convert a **TDocument** into an HTML string, use **THtmlFormatter.GetHTML** class in `Formatter.pas`:
 
 ```
 var
    html: string;
    
-html := THtmlFormatter.OuterHtml(doc);
+html := THtmlFormatter.GetHTML(document);
+```
+
+returns:
+
+```
+<HTML>
+  <BODY>Hello, world!</BODY>
+</HTML>
+```
+
+------------
+
+**Example 3** &mdash; Get a string reprentation of the DOM tree
+
+Use the function **Formatter.DumpDOM** to get a representation of the DOM tree of a **Node**:
+
+```
+var
+	s: string;
+	doc: TDocument;
+
+	//Get a sample html document
+	s := 
+			'<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">'+#13#10+
+			'<html lang="en">'+#13#10+
+			' <head>'+#13#10+
+			'  <title>Sample page</title>'+#13#10+
+			' </head>'+#13#10+
+			' <body>'+#13#10+
+			'  <h1>Sample page</h1>'+#13#10+
+			'  <p>This is a <a href="demo.html">simple</a> sample.</p>'+#13#10+
+			'  <!-- this is a comment -->'+#13#10+
+			' </body>'+#13#10+
+			'</html>';
+
+	doc := THtmlParser.Parse(s);
+
+	s := DumpDOM(doc);
+```
+
+The returned DOM string will be:
+
+```
+#document
+├── DOCTYPE: html
+╰── HTML lang="en"
+    ├── HEAD
+    │   ├── #text: "⏎␣␣"
+    │   ├── TITLE
+    │   │   ╰── #text: "Sample␣page"
+    │   ╰── #text: "⏎␣"
+    ├── #text: "⏎␣"
+    ╰── BODY
+        ├── #text: "⏎␣␣"
+        ├── H1
+        │   ╰── #text: "Sample␣page"
+        ├── #text: "⏎␣␣"
+        ├── P
+        │   ├── #text: "This␣is␣a␣"
+        │   ├── A href="demo.html"
+        │   │   ╰── #text: "simple"
+        │   ╰── #text: "␣sample."
+        ├── #text: "⏎␣␣"
+        ├── #comment:  this is a comment 
+        ╰── #text: "⏎␣⏎"
 ```
 
 
@@ -70,6 +133,8 @@ Version History
 ----------
 
 - Formatter.pas: Added DumpDOM function, which dumps a text-based tree of the document tree
+- TBaseFormatter: Fixed node iteration so starts with the Document child nodes - including doctype
+- TBaseFormatter: Added support to dump doctype nodes
 - THtmlParser: Added static Parse(html) class function
 - THtmlParser: GetMainElement now compares element tag names case insensitively
 - THtmlParser: FindThisElement now compares element tag names case insensitively
@@ -79,6 +144,8 @@ Version History
 - THtmlReader: Fixed ReadDocumentType method to correctly handle:
                - doctypes without either a publicId or systemID (e.g. HTML 5)
                - doctypes where only the SystemID is specified
+- THtmlReader: Changed ReadDocumentType to LowerCase the doctype name
+- THtmlReader: Changed ReadDocumentType so Doctype publicid and systemid can also be enclosed in APOSTROPHE (in addition to QUOTATION MARK)
 - THtmlReader: Fixed ReadQuotedValue to not return the closing '"' character. (only used by doctype reading)
 - THtmlReader: Removed OnNotation event; since it's never called and nobody seems to know what could possibly be
 - THtmlTagList: CompareName now does a case insensitive comparison
@@ -93,6 +160,7 @@ Version History
   - TDocument: CanInsert will now accept DOCUMENT_TYPE_NODE as a node that can be inserted
   - TDocument: GetDocType is now a convenience method (like GetDocumentElement) that finds the doctype child node for you
   - TDocument: CreateAttribute now lowercases the attribute name
+  - TNode: Added TextContent property
 
 12/20/2021
 ----------
