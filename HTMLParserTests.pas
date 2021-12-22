@@ -17,8 +17,15 @@ type
 		procedure TestParseString_CanReadAttributeValues;
 		procedure TestParseString_AttrValueIsSameAsNodeValue;
 		procedure TestParseString_DocTypes;
+		procedure TestParseString_DocTypes_LegacyAppCompat;
 		procedure TestParseString_FailsToParse;
 		procedure TestParseString_NodesAfterHtml;
+	end;
+
+	THtmlFormatterTests = class(TTestCase)
+	published
+		procedure TestGetHtml;
+		procedure TestGetHtml_IncludesDocType;
 	end;
 
 implementation
@@ -69,7 +76,7 @@ begin
 	doc := THtmlParser.Parse('<SPAN id="st">Hello, world!</SPAN');
 	CheckTrue(doc <> nil);
 
-	Status(DumpDOM(doc));
+	Status(#13#10+'DOM tree'+#13#10+'----------'+DumpDOM(doc));
 
 	span := doc.getElementById('st') as TElement;
 	CheckTrue(span <> nil);
@@ -98,7 +105,7 @@ begin
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
 
-	Status(DumpDOM(doc));
+	Status(#13#10+'DOM tree'+#13#10+'----------'+DumpDOM(doc));
 
 	st := doc.getElementById('st');
 	CheckTrue(st <> nil);
@@ -118,9 +125,9 @@ procedure THtmlParserTests.TestParseString_DocTypes;
 
 		Status(DumpDOM(doc));
 
-		CheckEquals(ExpectedName, doc.DocType.NodeName);
-		CheckEquals(ExpectedPublicID, doc.DocType.PublicID);
-		CheckEquals(ExpectedSystemID, doc.DocType.SystemID);
+		CheckEquals(ExpectedName, doc.DocType.NodeName, DocType);
+		CheckEquals(ExpectedPublicID, doc.DocType.PublicID, DocType);
+		CheckEquals(ExpectedSystemID, doc.DocType.SystemID, DocType);
 	end;
 
 begin
@@ -129,55 +136,91 @@ begin
 }
 
 //	HTML 5:
-	t('<!DOCTYPE HTML>', 'HTML', '', '');
-	t('<!DOCTYPE html>', 'HTML', '', '');
-	t('<!doctype html>', 'HTML', '', '');
+	t('<!DOCTYPE html>', 'html', '', '');
+	t('<!DOCTYPE HTML>', 'html', '', ''); //doctype names should be converted to lowercase during parsing
+	t('<!doctype html>', 'html', '', ''); //doctype keyword is case insensitive
+	t('<!dOcTyPe html>', 'html', '', ''); //doctype keyword is case insensitive
 
 //	HTML 4.01
 	t('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">',
-			'HTML',
+			'html',
 			'-//W3C//DTD HTML 4.01//EN',
 			'http://www.w3.org/TR/html4/strict.dtd');
 	t('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">',
-			'HTML',
+			'html',
 			'-//W3C//DTD HTML 4.01 Transitional//EN',
 			'http://www.w3.org/TR/html4/loose.dtd');
 	t('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">',
-			'HTML',
+			'html',
 			'-//W3C//DTD HTML 4.01 Frameset//EN',
 			'http://www.w3.org/TR/html4/frameset.dtd');
 
 //	XHTML 1.0
 	t('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">',
-			'HTML', //converted to uppercase - as html should be
+			'html',
 			'-//W3C//DTD XHTML 1.0 Strict//EN',
 			'http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd');
 	t('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">',
-			'HTML', //covnerted to uppercase, as html should be
+			'html',
 			'-//W3C//DTD XHTML 1.0 Transitional//EN',
 			'http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd');
 	t('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Frameset//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd">',
-			'HTML',
+			'html',
 			'-//W3C//DTD XHTML 1.0 Frameset//EN',
 			'http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd');
 
 //	MathML 2.0
 	t('<!DOCTYPE math PUBLIC "-//W3C//DTD MathML 2.0//EN" "http://www.w3.org/Math/DTD/mathml2/mathml2.dtd">',
-			'MATH', //converted to uppercase, as html should be
+			'math',
 			'-//W3C//DTD MathML 2.0//EN',
 			'http://www.w3.org/Math/DTD/mathml2/mathml2.dtd');
 
 //	MathML 1.0
 	t('<!DOCTYPE math SYSTEM "http://www.w3.org/Math/DTD/mathml1/mathml.dtd">',
-			'MATH', //converted to uppercase as html should be
+			'math',
 			'', //no public - only system
 			'http://www.w3.org/Math/DTD/mathml1/mathml.dtd');
 
 //	SVG 1.1 Full
 	t('<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">',
-			'SVG', //converted to uppercase, as html should be
+			'svg',
 			'-//W3C//DTD SVG 1.1//EN',
 			'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd');
+end;
+
+procedure THtmlParserTests.TestParseString_DocTypes_LegacyAppCompat;
+
+	procedure t(const DocType, ExpectedName, ExpectedPublicID, ExpectedSystemID: TDomString);
+	var
+		actualName, actualPublicID, actualSystemID: TDomString;
+		doc: TDocument;
+	begin
+		doc := THtmlParser.Parse(DocType+'<HTML/>');
+		CheckTrue(doc <> nil);
+
+		Status(DumpDOM(doc));
+
+		CheckEquals(ExpectedName, doc.DocType.NodeName, DocType);
+		CheckEquals(ExpectedPublicID, doc.DocType.PublicID, DocType);
+		CheckEquals(ExpectedSystemID, doc.DocType.SystemID, DocType);
+	end;
+
+begin
+{
+	HTML 5 legacy appcompat strings
+	https://html.spec.whatwg.org/#doctype-legacy-string
+
+	For the purposes of HTML generators that cannot output HTML markup with the
+	short DOCTYPE "<!DOCTYPE html>", a DOCTYPE legacy string may be inserted
+	into the DOCTYPE.
+}
+
+	t('<!DOCTYPE html SYSTEM "about:legacy-compat">',
+			'html', '', 'about:legacy-compat');
+
+	//Apostrophe character is also allowed
+	t('<!DOCTYPE html SYSTEM ''about:legacy-compat''>',
+			'html', '', 'about:legacy-compat');
 end;
 
 procedure THtmlParserTests.TestParseString_FailsToParse;
@@ -185,6 +228,9 @@ var
 	szHtml: string;
 	doc: TDocument;
 begin
+{
+	In the past this was a sample HTML page that refused to parse.
+}
 	szHtml :=
 			'<HTML>'+#13#10+
 			'<BODY>'+#13#10+
@@ -200,7 +246,7 @@ begin
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
 
-	Status(DumpDom(doc));
+	Status(#13#10+'DOM tree'+#13#10+'----------'+DumpDOM(doc));
 end;
 
 procedure THtmlParserTests.TestParseString_Html4Transitional;
@@ -299,8 +345,10 @@ begin
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
 
-	Status(DumpDOM(doc));
+	Status(#13#10+'DOM tree'+#13#10+'----------'+DumpDOM(doc));
 {
+	DOM tree should be:
+
 	HTML
 		BODY
 			#text: "Hello, world!"
@@ -335,13 +383,13 @@ begin
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
 
-	Status(DumpDOM(doc));
+	Status(#13#10+'DOM tree'+#13#10+'----------'+DumpDOM(doc));
 {
 	HTML
 		BODY
 			#text: "Hello, world! http://sourceforge.net/projects/htmlp?arg=0&arg2=0"
 }
-	CheckEquals(1, doc.ChildNodes.Length);
+	CheckEquals(1, doc.ChildNodes.Length, 'Document should have only top level element: html. Known bug that HTML Parser does move nodes after body to child of body');
 end;
 
 procedure THtmlParserTests.TestParseString_TrailingTextAddedToBodyNewTextNode;
@@ -367,7 +415,7 @@ begin
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
 
-	Status(DumpDOM(doc));
+	Status(#13#10+'DOM tree'+#13#10+'----------'+DumpDOM(doc));
 {
 	HTML
 		BODY
@@ -375,7 +423,7 @@ begin
 			BR
 			#text: "http://sourceforge.net/projects/htmlp?arg=0&arg2=0"
 }
-	CheckEquals(1, doc.ChildNodes.Length);
+	CheckEquals(1, doc.ChildNodes.Length, 'Document should have only one top level element: html. Known bug that HTML Parser does not add elements after body to the end of body (nor does it consolidate text nodes');
 end;
 
 procedure THtmlParserTests.TestParseString_TrailingText_Fails;
@@ -414,16 +462,81 @@ begin
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
 
-	Status(DumpDOM(doc));
+	Status(#13#10+'DOM tree'+#13#10+'----------'+DumpDOM(doc));
 {
 	HTML
 		BODY
 			#text: "Hello, world! http://sourceforge.net/projects/htmlp?arg=0'
 }
-	CheckEquals(1, doc.ChildNodes.Length);
+	CheckEquals(1, doc.ChildNodes.Length, 'Document should have only one top level elements: html. Known bug that HTML Parser does not move nodes after body to the end of body');
+end;
+
+{ THtmlFormatterTests }
+
+procedure THtmlFormatterTests.TestGetHtml;
+var
+	s: string;
+	doc: TDocument;
+begin
+	s :=
+			'<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">'+#13#10+
+			'<html lang="en">'+#13#10+
+			' <head>'+#13#10+
+			'  <title>Sample page</title>'+#13#10+
+			' </head>'+#13#10+
+			' <body>'+#13#10+
+			'  <h1>Sample page</h1>'+#13#10+
+			'  <p>This is a <a href="demo.html">simple</a> sample.</p>'+#13#10+
+			'  <!-- this is a comment -->'+#13#10+
+			' </body>'+#13#10+
+			'</html>';
+
+	doc := THtmlParser.Parse(s);
+	try
+		s := THtmlFormatter.GetHtml(doc);
+	finally
+		doc.Free;
+	end;
+
+	Status('Recovered HTML: '+#13#10+s);
+
+	CheckTrue(s <> '');
+end;
+
+procedure THtmlFormatterTests.TestGetHtml_IncludesDocType;
+var
+	s: string;
+	doc: TDocument;
+begin
+	s :=
+			'<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">'+#13#10+
+			'<html lang="en">'+#13#10+
+			' <head>'+#13#10+
+			'  <title>Sample page</title>'+#13#10+
+			' </head>'+#13#10+
+			' <body>'+#13#10+
+			'  <h1>Sample page</h1>'+#13#10+
+			'  <p>This is a <a href="demo.html">simple</a> sample.</p>'+#13#10+
+			'  <!-- this is a comment -->'+#13#10+
+			' </body>'+#13#10+
+			'</html>';
+
+	doc := THtmlParser.Parse(s);
+	try
+		s := THtmlFormatter.GetHtml(doc);
+	finally
+		doc.Free;
+	end;
+
+	Status('Recovered HTML: '+#13#10+s);
+
+	CheckTrue(s <> '');
+
+	CheckEquals('<!DOCTYPE', Copy(s, 1, 9));
 end;
 
 initialization
 	TestFramework.RegisterTest('HTMLParser\THtmlParser', THtmlParserTests.Suite);
+	TestFramework.RegisterTest('HTMLParser\THtmlFormatter', THtmlFormatterTests.Suite);
 
 end.
