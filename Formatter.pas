@@ -61,14 +61,15 @@ type
 		procedure AppendNewLine;
 		procedure AppendParagraph;
 		procedure AppendText(const TextStr: TDomString); virtual;
+		procedure ProcessDocument; virtual;
+		procedure ProcessDocumentTypeNode(DocType: TDocumentType); virtual;
+		procedure ProcessElement(Element: TElement); virtual;
 		procedure ProcessAttribute(Attr: TAttr); virtual;
 		procedure ProcessAttributes(Element: TElement); virtual;
 		procedure ProcessCDataSection(CDataSection: TCDataSection); virtual;
 		procedure ProcessComment(Comment: TComment); virtual;
-		procedure ProcessDocumentElement; virtual;
-		procedure ProcessElement(Element: TElement); virtual;
 		procedure ProcessEntityReference(EntityReference: TEntityReference); virtual;
-//	procedure ProcessNotation(Notation: TNotation); virtual;
+//		procedure ProcessNotation(Notation: TNotation); virtual;
 		procedure ProcessProcessingInstruction(ProcessingInstruction: TProcessingInstruction); virtual;
 		procedure ProcessTextNode(TextNode: TTextNode); virtual;
 	public
@@ -87,9 +88,22 @@ type
 		procedure ProcessTextNode(TextNode: TTextNode); override;
 	public
 		constructor Create;
+		class function GetHTML(Document: TDocument): TDomString;
 		property Indent: Integer read FIndent write FIndent;
 	end;
 
+{
+	This TextFormatter class gives results different from:
+
+		- doc.innerText
+		- doc.textContent
+
+	It gives its own thing; which really limits how useful it is.
+
+		- innerText is aware of presentation - like using CSS to all UPPERCASE the text
+				In which case the resulting innerText will be UPPERCASEd
+		- textContent
+}
 	TTextFormatter = class(TBaseFormatter)
 	protected
 		FInsideAnchor: Boolean;
@@ -101,8 +115,10 @@ type
 		procedure ProcessTextNode(TextNode: TTextNode); override;
 	public
 		constructor Create;
+		class function GetText(Document: TDocument): TDomString;
 	end;
 
+	//Get a text represetation of the DOM tree
 	function DumpDOM(const Node: TNode): TDOMString;
 
 
@@ -249,12 +265,15 @@ procedure TBaseFormatter.ProcessNode(Node: TNode);
 begin
 	case Node.nodeType of
 	ELEMENT_NODE:                ProcessElement(Node as TElement);
-	TEXT_NODE:                   if (FWhatToShow and SHOW_TEXT) <> 0 then ProcessTextNode(Node as TTextNode);
-	CDATA_SECTION_NODE:          if (FWhatToShow and SHOW_CDATA_SECTION) <> 0 then ProcessCDataSection(Node as TCDataSection);
-	ENTITY_REFERENCE_NODE:       if (FWhatToShow and SHOW_ENTITY_REFERENCE) <> 0 then ProcessEntityReference(Node as TEntityReference);
-	PROCESSING_INSTRUCTION_NODE: if (FWhatToShow and SHOW_PROCESSING_INSTRUCTION) <> 0 then ProcessProcessingInstruction(Node as TProcessingInstruction);
-	COMMENT_NODE:                if (FWhatToShow and SHOW_COMMENT) <> 0 then ProcessComment(Node as TComment);
-//	NOTATION_NODE:               if (FWhatToShow and SHOW_NOTATION) <> 0 then ProcessNotation(Node as Notation)
+	DOCUMENT_TYPE_NODE:				if (FWhatToShow and SHOW_DOCUMENT_TYPE) <> 0 then ProcessDocumentTypeNode(Node as TDocumentType);
+	TEXT_NODE:							if (FWhatToShow and SHOW_TEXT) <> 0 then ProcessTextNode(Node as TTextNode);
+	CDATA_SECTION_NODE:				if (FWhatToShow and SHOW_CDATA_SECTION) <> 0 then ProcessCDataSection(Node as TCDataSection);
+	ENTITY_REFERENCE_NODE:			if (FWhatToShow and SHOW_ENTITY_REFERENCE) <> 0 then ProcessEntityReference(Node as TEntityReference);
+	PROCESSING_INSTRUCTION_NODE:	if (FWhatToShow and SHOW_PROCESSING_INSTRUCTION) <> 0 then ProcessProcessingInstruction(Node as TProcessingInstruction);
+	COMMENT_NODE:						if (FWhatToShow and SHOW_COMMENT) <> 0 then ProcessComment(Node as TComment);
+//	NOTATION_NODE:						if (FWhatToShow and SHOW_NOTATION) <> 0 then ProcessNotation(Node as Notation)
+	else
+		//Unknown node type
 	end
 end;
 
@@ -320,13 +339,39 @@ begin
 	AppendText('-->')
 end;
 
-procedure TBaseFormatter.ProcessDocumentElement;
+procedure TBaseFormatter.ProcessDocument;
+var
+	i: Integer;
 begin
-	if Assigned(FDocument.documentElement) then
+	if not Assigned(FDocument) then
+		Exit;
+
+	FDepth := 0;
+	for i := 0 to FDocument.ChildNodes.Length-1 do
+		ProcessNode(FDocument.ChildNodes.Item(i));
+end;
+
+procedure TBaseFormatter.ProcessDocumentTypeNode(DocType: TDocumentType);
+begin
+	AppendText('<!DOCTYPE');
+	AppendText(' ');
+	AppendText(DocType.name);
+
+	if Doctype.publicId <> '' then
 	begin
-		FDepth := 0;
-		ProcessElement(FDocument.documentElement)
-	end
+		AppendText(' PUBLIC "');
+		AppendText(DocType.publicId);
+		AppendText('"');
+	end;
+
+	if DocType.systemId <> '' then
+	begin
+		AppendText(' "');
+		AppendText(DocType.systemId);
+		AppendText('"');
+	end;
+
+	AppendText('>');
 end;
 
 procedure TBaseFormatter.ProcessElement(Element: TElement);
@@ -367,7 +412,7 @@ begin
 	FDocument := document;
 	FStringBuilder := TStringBuilder.Create(65530);
 	try
-		ProcessDocumentElement;
+		ProcessDocument;
 		Result := FStringBuilder.ToString
 	finally
 		FStringBuilder.Free
@@ -378,6 +423,18 @@ constructor THtmlFormatter.Create;
 begin
 	inherited Create;
 	FIndent := 2
+end;
+
+class function THtmlFormatter.GetHTML(Document: TDocument): TDomString;
+var
+	formatter: TBaseFormatter;
+begin
+	formatter := THtmlFormatter.Create;
+	try
+		Result := formatter.getText(Document);
+	finally
+		formatter.Free;
+	end;
 end;
 
 function THtmlFormatter.OnlyTextContent(Element: TElement): Boolean;
@@ -483,6 +540,18 @@ begin
 		Result := Node.getAttributeNode('alt').value
 	else
 		Result := ''
+end;
+
+class function TTextFormatter.GetText(Document: TDocument): TDomString;
+var
+	formatter: TBaseFormatter;
+begin
+	formatter := TTextFormatter.Create;
+	try
+		Result := formatter.getText(Document);
+	finally
+		formatter.Free;
+	end;
 end;
 
 procedure TTextFormatter.AppendText(const TextStr: TDomString);
