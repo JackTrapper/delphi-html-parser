@@ -150,6 +150,7 @@ type
 		function GetNamespaceURI: TDomString;
 		function InsertSingleNode(newChild, refChild: TNode): TNode;
 		procedure SetOwnerDocument(const Value: TDocument);
+		function GetTextContent: TDomString; virtual;
 	protected
 		FChildNodes: TNodeList;
 		function GetNodeName: TDomString; virtual;
@@ -182,9 +183,10 @@ type
 		function GetElementByID(const ElementID: TDomString): TElement;
 		procedure normalize;
 
+		property NodeType: TNodeType read GetNodeType;
 		property NodeName: TDomString read GetNodeName;
 		property NodeValue: TDomString read GetNodeValue write SetNodeValue;
-		property NodeType: TNodeType read GetNodeType;
+		property TextContent: TDomString read GetTextContent;
 		property ParentNode: TNode read GetParentNode;
 		property ChildNodes: TNodeList read FChildNodes;
 		property FirstChild: TNode read GetFirstChild;
@@ -234,6 +236,7 @@ type
 		function GetLength: Integer;
 	protected
 		procedure SetNodeValue(const value: TDomString); override;
+		function GetTextContent: TDomString; override;
 		constructor Create(ownerDocument: TDocument; const data: TDomString);
 	public
 		function substringData(offset, count: Integer): TDomString;
@@ -285,6 +288,7 @@ type
 		function CanInsert(node: TNode): Boolean; override;
 		function ExportNode(ownerDocument: TDocument; deep: Boolean): TNode; override;
 		procedure SetNodeValue(const value: TDomString); override;
+		function GetTextContent: TDomString; override;
 	public
 		function cloneNode(deep: Boolean): TNode; override;
 		property name: TDomString read GetNodeName;
@@ -300,6 +304,7 @@ type
 		function GetNodeType: TNodeType; override;
 		function CanInsert(node: TNode): Boolean; override;
 		function ExportNode(otherDocument: TDocument; deep: Boolean): TNode; override;
+		function GetTextContent: TDomString; override;
 		constructor Create(ownerDocument: TDocument; const namespaceURI, qualifiedName: TDomString; withNS: Boolean);
 	public
 		function cloneNode(deep: Boolean): TNode; override;
@@ -350,6 +355,7 @@ type
 		function GetNodeType: TNodeType; override;
 		function GetNodeName: TDomString; override;
 		function ExportNode(otherDocument: TDocument; deep: Boolean): TNode; override;
+		function GetTextContent: TDomString; override;
 		constructor Create(ownerDocument: TDocument);
 	public
 		function cloneNode(deep: Boolean): TNode; override;
@@ -617,6 +623,11 @@ begin
 		if I > 0 then
 			Result := ParentNode.ChildNodes.item(I - 1)
 	end
+end;
+
+function TNode.GetTextContent: TDomString;
+begin
+	Result := '';
 end;
 
 function TNode.GetNextSibling: TNode;
@@ -1173,6 +1184,11 @@ begin
 	Result := System.Length(FNodeValue)
 end;
 
+function TCharacterData.GetTextContent: TDomString;
+begin
+	Result := Self.data;
+end;
+
 function TCharacterData.substringData(offset, count: Integer): TDomString;
 begin
 	if (offset < 0) or (offset >= length) or (count < 0) then
@@ -1339,6 +1355,11 @@ begin
 	Result := true
 end;
 
+function TAttr.GetTextContent: TDomString;
+begin
+	Result := Self.value;
+end;
+
 function TAttr.CanInsert(node: TNode): Boolean;
 begin
 	Result := node.NodeType in [ENTITY_REFERENCE_NODE, TEXT_NODE]
@@ -1365,6 +1386,15 @@ end;
 function TElement.GetNodeType: TNodeType;
 begin
 	Result := ELEMENT_NODE
+end;
+
+function TElement.GetTextContent: TDomString;
+var
+	i: Integer;
+begin
+	Result := '';
+	for i := 0 to Self.ChildNodes.Length-1 do
+		Result := Result+Self.ChildNodes.Item(i).TextContent;
 end;
 
 function TElement.CanInsert(node: TNode): Boolean;
@@ -1510,6 +1540,15 @@ end;
 function TDocumentFragment.GetNodeType: TNodeType;
 begin
 	Result := DOCUMENT_FRAGMENT_NODE
+end;
+
+function TDocumentFragment.GetTextContent: TDomString;
+var
+	i: Integer;
+begin
+	Result := '';
+	for i := 0 to Self.ChildNodes.Length-1 do
+		Result := Result+Self.ChildNodes.Item(i).TextContent;
 end;
 
 function TDocumentFragment.GetNodeName: TDomString;
