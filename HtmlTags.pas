@@ -5,6 +5,26 @@ interface
 uses
 	Classes, DomCore;
 
+{
+	Provides a singleton database of known HTML tag, and information about them.
+	
+	The list of known HTML tags are provided through the global function:
+	
+		function HtmlTagList: THtmlTagList;
+
+	And known list of URL schemes through:
+
+		function URLSchemes: TURLSchemes;
+
+	Version history
+	---------------
+	
+	12/21/2021
+		- Changed from global variables to singleton functions.
+		- URLSchemes now, like HtmlTagList, populates itself during its constructor.
+		- Searching for tag names in HtmlTagList is now case insensitive
+}
+
 const
 	MAX_TAGS_COUNT  = 128;
 	MAX_FLAGS_COUNT = 32;
@@ -50,6 +70,7 @@ type
 	private
 		FMaxLen: Integer;
 	public
+		constructor Create;
 		function Add(const S: String): Integer; override;
 		function IsURL(const S: String): Boolean;
 		function GetScheme(const S: String): String;
@@ -184,6 +205,15 @@ end;
 constructor THtmlTagList.Create;
 begin
 	inherited Create;
+
+{
+	HTML tag names in HTML are returned as canonical UPPERCASE.
+
+	https://www.w3.org/TR/DOM-Level-3-Core/core.html#ID-104682815
+
+	> The HTML DOM returns the tagName of an HTML element in the canonical uppercase form,
+	> regardless of the case in the source HTML document.
+}
 	FList := TList.Create;
 	FList.Capacity := MAX_TAGS_COUNT;
 	FList.Add(THtmlTag.Create('a',          A_TAG,          [], []));
@@ -321,7 +351,8 @@ end;
 
 function THtmlTagList.CompareName(Tag: THtmlTag): Integer;
 begin
-	Result := CompareStr(FSearchName, Tag.Name)
+//	Result := CompareStr(FSearchName, Tag.Name)
+	Result := CompareText(FSearchName, Tag.Name); //html is case insensitive
 end;
 
 function THtmlTagList.CompareNumber(Tag: THtmlTag): Integer;
@@ -353,6 +384,19 @@ end;
 function TURLSchemes.IsURL(const S: String): Boolean;
 begin
 	Result := IndexOf(LowerCase(S)) >= 0
+end;
+
+constructor TURLSchemes.Create;
+begin
+	inherited Create;
+
+	Self.Add('http');
+	Self.Add('https');
+	Self.Add('ftp');
+	Self.Add('mailto');
+	Self.Add('news');
+	Self.Add('nntp');
+	Self.Add('gopher');
 end;
 
 function TURLSchemes.GetScheme(const S: String): String;
@@ -393,6 +437,7 @@ end;
 
 var
 	g_URLSchemes: TURLSchemes = nil;
+
 function URLSchemes: TURLSchemes;
 var
 	list: TUrlSchemes;
@@ -400,14 +445,6 @@ begin
 	if g_URLSchemes = nil then
 	begin
 		list := TURLSchemes.Create;
-		list.Add('http');
-		list.Add('https');
-		list.Add('ftp');
-		list.Add('mailto');
-		list.Add('news');
-		list.Add('nntp');
-		list.Add('gopher');
-
 		g_URLSchemes := list;
 	end;
 

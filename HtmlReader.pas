@@ -1,17 +1,50 @@
 unit HtmlReader;
 
 {
-	This class is used to parse an HTML string using a SAX eventing model.
-	Listeners attach to the various OnXxx SAX events.
+	The THTMLReader parses an HTML string into tokens, and presents them to the
+	caller using a SAX-like eventing model.
+
+	Listeners attach to the various OnXxx events:
+
+		rdr.OnDocType := DocType;
+		rdr.OnElementStart := ElementStart;
+		rdr.OnElementEnd := ElementEnd;
+		rdr.OnAttributeStart := AttributeStart;
+		rdr.OnAttributeEnd := AttributeEnd;
+		rdr.OnCDataSection := CDataSection;
+		rdr.OnComment := Comment;
+		rdr.OnEndElement := EndElement;
+		rdr.OnEntityReference := EntityReference;
+		//rdr.OnNotation := Notation;
+		rdr.OnProcessingInstruction := ProcessingInstruction;
+		rdr.OnTextNode := TextNode;
 
 	This class is used by THTMLParser to process a string into a TDocument.
 
 	You should not need to use this class directly unless you need to stream
 	processing of a very large HTML document.
 
-	See THtmlParser.ParseString for sample usage.
+	See THtmlParser.ParseString for complete example of usage.
+
+		var
+			rdr: THtmlReader;
+
+		rdr := THtmlReader.Create;
+		rdr.OnElementStart := ElementStart;
+		rdr.HtmlStr := '<HTML><BODY>Hello, world!</BODY></HTML>';
+		while rdr.Read do
+		begin
+
+		end;
+		rdr.Free;
 
 	TODO: Allow reading the HTML from a TStream.
+
+	Version History
+	===============
+	12/20/2021
+		- Fixed ReadQuotedStr to not also return the final '"' character.
+		  (only used by doctype reading)
 }
 
 interface
@@ -26,8 +59,9 @@ type
 
 	THtmlReader = class
 	private
-		FHtmlStr: TDomString;
-		FPosition: Integer;
+		FHtmlStr: TDomString; //the HTML string we are parsing
+		FPosition: Integer;   //current index in HtmlStr
+
 		FNodeType: Integer;
 		FPrefix: TDomString;
 		FLocalName: TDomString;
@@ -43,15 +77,19 @@ type
 		FOnCDataSection: TNotifyEvent;
 		FOnComment: TNotifyEvent;
 		FOnDocType: TNotifyEvent;
-		FOnElementEnd: TNotifyEvent;
 		FOnElementStart: TNotifyEvent;
+		FOnElementEnd: TNotifyEvent;
 		FOnEndElement: TNotifyEvent;
 		FOnEntityReference: TNotifyEvent;
-		FOnNotation: TNotifyEvent;
+		//FOnNotation: TNotifyEvent;
 		FOnProcessingInstruction: TNotifyEvent;
 		FOnTextNode: TNotifyEvent;
 
+		procedure SetHtmlStr(const Value: TDomString);
+		procedure SetNodeName(Value: TDomString);
 		function GetNodeName: TDomString;
+		procedure FireEvent(Event: TNotifyEvent);
+
 		function GetToken(Delimiters: TDelimiters): TDomString;
 		function IsAttrTextChar: Boolean;
 		function IsDigit(HexBase: Boolean): Boolean;
@@ -70,53 +108,58 @@ type
 		function IsStartMarkupChar: Boolean;
 		function IsStartTagChar: Boolean;
 		function Match(const Signature: TDomString; IgnoreCase: Boolean): Boolean;
-		function ReadAttrNode: Boolean;
-		function ReadAttrTextNode: Boolean;
-		function ReadCharacterData: Boolean;
-		function ReadComment: Boolean;
-		function ReadDocumentType: Boolean;
-		function ReadElementNode: Boolean;
-		function ReadEndElementNode: Boolean;
+
+		function ReadAttrNode: Boolean; 				//fires OnAttributeStart (NodeName)
+		function ReadAttrTextNode: Boolean;			//fires OnTextNode (NodeValue, NodeType)
+		function ReadSpecialNode: Boolean;			//calls ReadComment, ReadCharacterData, or ReadDocumentType
+		function ReadComment: Boolean;				//fires OnComment (NodeValue, NodeType)
+		function ReadCharacterData: Boolean;		//fires OnCDataSection (NodeValue, NodeType)
+		function ReadDocumentType: Boolean;			//fires OnDocType (NodeName, PublicID, SystemID)
+		procedure ReadTextNode;							//fires OnTextNode (NodeValue, NodeType)
+		function ReadElementNode: Boolean;			//fires OnElementStart (NodeName, NodeType)
+		function ReadEndElementNode: Boolean;		//fires OnEndElement (NodeName, NodeType)
+		procedure ReadElementTail;						//fires OnElementEnd (NodeType)
 		function ReadEntityNode: Boolean;
-		function ReadNamedEntityNode: Boolean;
-		function ReadNumericEntityNode: Boolean;
+		function ReadNamedEntityNode: Boolean;		//fires OnEntityReference (NodeName, NodeType)
+		function ReadNumericEntityNode: Boolean;	//fires OnTextNode (NodeValue, NodeType)
+
 		function ReadQuotedValue(var Value: TDomString): Boolean;
-		function ReadSpecialNode: Boolean;
 		function ReadTagNode: Boolean;
 		function ReadValueNode: Boolean;
 		function SkipTo(const Signature: TDomString): Boolean;
-		procedure FireEvent(Event: TNotifyEvent);
-		procedure ReadElementTail;
-		procedure ReadTextNode;
-		procedure SetHtmlStr(const Value: TDomString);
-		procedure SetNodeName(Value: TDomString);
 		procedure SkipWhiteSpaces;
+
 	public
 		constructor Create;
-		function read: Boolean;
-		property htmlStr: TDomString read FHtmlStr write SetHtmlStr;
-		property isEmptyElement: Boolean read FIsEmptyElement;
-		property localName: TDomString read FLocalName;
-		property nodeName: TDomString read GetNodeName;
-		property nodeType: Integer read FNodeType;
-		property position: Integer read FPosition;
-		property prefix: TDomString read FPrefix;
-		property publicID: TDomString read FPublicID;
-		property state: TReaderState read FState;
-		property systemID: TDomString read FSystemID;
-		property nodeValue: TDomString read FNodeValue;
 
-		//SAX events
-		property OnAttributeEnd: TNotifyEvent read FOnAttributeEnd write FOnAttributeEnd;
+		function Read: Boolean;
+
+		property HtmlStr: TDomString read FHtmlStr write SetHtmlStr;
+
+		property Position: Integer read FPosition;
+		property State: TReaderState read FState;
+
+		// Properties of current read state
+		property nodeType: Integer read FNodeType;
+		property prefix: TDomString read FPrefix;
+		property localName: TDomString read FLocalName;
+		property nodeName: TDomString read GetNodeName; //synthetic from Prefix and LocalName
+		property nodeValue: TDomString read FNodeValue;
+		property publicID: TDomString read FPublicID;
+		property systemID: TDomString read FSystemID;
+		property isEmptyElement: Boolean read FIsEmptyElement;
+
+		//SAX-like events
 		property OnAttributeStart: TNotifyEvent read FOnAttributeStart write FOnAttributeStart;
+		property OnAttributeEnd: TNotifyEvent read FOnAttributeEnd write FOnAttributeEnd;
 		property OnCDataSection: TNotifyEvent read FOnCDataSection write FOnCDataSection;
 		property OnComment: TNotifyEvent read FOnComment write FOnComment;
 		property OnDocType: TNotifyEvent read FOnDocType write FOnDocType;
-		property OnElementEnd: TNotifyEvent read FOnElementEnd write FOnElementEnd;
 		property OnElementStart: TNotifyEvent read FOnElementStart write FOnElementStart;
+		property OnElementEnd: TNotifyEvent read FOnElementEnd write FOnElementEnd; //nodeType, isEmptyElement
 		property OnEndElement: TNotifyEvent read FOnEndElement write FOnEndElement;
 		property OnEntityReference: TNotifyEvent read FOnEntityReference write FOnEntityReference;
-		property OnNotation: TNotifyEvent read FOnNotation write FOnNotation;
+		//property OnNotation: TNotifyEvent read FOnNotation write FOnNotation;
 		property OnProcessingInstruction: TNotifyEvent read FOnProcessingInstruction write FOnProcessingInstruction;
 		property OnTextNode: TNotifyEvent read FOnTextNode write FOnTextNode;
 	end;
@@ -127,31 +170,31 @@ uses
 	SysUtils;
 
 const
-	startTagChar = Ord('<');
-	endTagChar = Ord('>');
-	specialTagChar = Ord('!');
-	slashChar = Ord('/');
-	equalChar = Ord('=');
-	quotation = [Ord(''''), Ord('"')];
-	tagDelimiter = [slashChar, endTagChar];
-	tagNameDelimiter = whiteSpace + tagDelimiter;
-	attrNameDelimiter = tagNameDelimiter + [equalChar];
-	startEntity = Ord('&');
-	startMarkup = [startTagChar, startEntity];
-	endEntity = Ord(';');
-	notEntity = [endEntity] + startMarkup + whiteSpace;
-	notAttrText = whiteSpace + quotation + tagDelimiter;
-	numericEntity = Ord('#');
-	hexEntity = [Ord('x'), Ord('X')];
-	decDigit = [Ord('0')..Ord('9')];
-	hexDigit = [Ord('a')..Ord('f'), Ord('A')..Ord('F')];
+	startTagChar 			= Ord('<');
+	endTagChar 				= Ord('>');
+	specialTagChar 		= Ord('!');
+	slashChar 				= Ord('/');
+	equalChar 				= Ord('=');
+	quotation 				= [Ord(''''), Ord('"')];
+	tagDelimiter 			= [slashChar, endTagChar];
+	tagNameDelimiter 		= whiteSpace + tagDelimiter;
+	attrNameDelimiter 	= tagNameDelimiter + [equalChar];
+	startEntity 			= Ord('&');
+	startMarkup 			= [startTagChar, startEntity];
+	endEntity 				= Ord(';');
+	notEntity 				= [endEntity] + startMarkup + whiteSpace;
+	notAttrText 			= whiteSpace + quotation + tagDelimiter;
+	numericEntity 			= Ord('#');
+	hexEntity 				= [Ord('x'), Ord('X')];
+	decDigit 				= [Ord('0')..Ord('9')];
+	hexDigit 				= [Ord('a')..Ord('f'), Ord('A')..Ord('F')];
 
-	DocTypeStartStr = 'DOCTYPE';
-	DocTypeEndStr = '>';
-	CDataStartStr = '[CDATA[';
-	CDataEndStr = ']]>';
-	CommentStartStr = '--';
-	CommentEndStr = '-->';
+	DocTypeStartStr 	= 'DOCTYPE';
+	DocTypeEndStr 		= '>';
+	CDataStartStr 		= '[CDATA[';
+	CDataEndStr 		= ']]>';
+	CommentStartStr 	= '--';
+	CommentEndStr 		= '-->';
 
 function DecValue(const Digit: WideChar): Word;
 begin
@@ -188,12 +231,12 @@ end;
 
 function THtmlReader.GetToken(Delimiters: TDelimiters): TDomString;
 var
-	Start: Integer;
+	start: Integer;
 begin
-	Start := FPosition;
+	start := FPosition;
 	while (FPosition <= Length(FHtmlStr)) and not (Ord(FHtmlStr[FPosition]) in Delimiters) do
 		Inc(FPosition);
-	Result := Copy(FHtmlStr, Start, FPosition - Start)
+	Result := Copy(FHtmlStr, start, FPosition - start)
 end;
 
 function THtmlReader.IsAttrTextChar: Boolean;
@@ -344,14 +387,14 @@ end;
 
 function THtmlReader.ReadAttrNode: Boolean;
 var
-	AttrName: TDomString;
+	attrName: TDomString;
 begin
 	Result := false;
 	SkipWhiteSpaces;
-	AttrName := LowerCase(GetToken(attrNameDelimiter));
-	if AttrName = '' then
+	attrName := LowerCase(GetToken(attrNameDelimiter));
+	if attrName = '' then
 		Exit;
-	SetNodeName(AttrName);
+	SetNodeName(attrName);
 	FireEvent(FOnAttributeStart);
 	FState := rsBeforeValue;
 	FQuotation := 0;
@@ -360,91 +403,126 @@ end;
 
 function THtmlReader.ReadAttrTextNode: Boolean;
 var
-	Start: Integer;
+	start: Integer;
 begin
 	Result := false;
-	Start := FPosition;
+	start := FPosition;
 	while (FPosition <= Length(FHtmlStr)) and IsAttrTextChar do
 		Inc(FPosition);
-	if FPosition = Start then
+	if FPosition = start then
 		Exit;
 	FNodeType := TEXT_NODE;
-	FNodeValue:= Copy(FHtmlStr, Start, FPosition - Start);
+	FNodeValue:= Copy(FHtmlStr, start, FPosition - start);
 	FireEvent(FOnTextNode);
 	Result := true
 end;
 
 function THtmlReader.ReadCharacterData: Boolean;
 var
-	StartPos: Integer;
+	startPos: Integer;
 begin
 	Inc(FPosition, Length(CDataStartStr));
-	StartPos := FPosition;
+	startPos := FPosition;
 	Result := SkipTo(CDataEndStr);
 	if Result then
 	begin
 		FNodeType := CDATA_SECTION_NODE;
-		FNodeValue := Copy(FHtmlStr, StartPos, FPosition - StartPos - Length(CDataEndStr));
+		FNodeValue := Copy(FHtmlStr, startPos, FPosition - startPos - Length(CDataEndStr));
 		FireEvent(FOnCDataSection)
 	end
 end;
 
 function THtmlReader.ReadComment: Boolean;
 var
-	StartPos: Integer;
+	startPos: Integer;
 begin
 	Inc(FPosition, Length(CommentStartStr));
-	StartPos := FPosition;
+	startPos := FPosition;
 	Result := SkipTo(CommentEndStr);
 	if Result then
 	begin
 		FNodeType := COMMENT_NODE;
-		FNodeValue := Copy(FHtmlStr, StartPos, FPosition - StartPos - Length(CommentEndStr));
+		FNodeValue := Copy(FHtmlStr, startPos, FPosition - startPos - Length(CommentEndStr));
 		FireEvent(FOnComment)
 	end
 end;
 
 function THtmlReader.ReadDocumentType: Boolean;
 var
-	Name: TDomString;
+	name: TDomString;
+	keyword: TDomString;
 begin
-	Result := false;
+{
+	Recommended list of Doctype declarations
+	https://www.w3.org/QA/2002/04/valid-dtd-list.html
+
+	HTML 5:
+		<!DOCTYPE HTML>
+
+	HTML 4.01
+
+		<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+		<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+		<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN" "http://www.w3.org/TR/html4/frameset.dtd">
+
+	XHTML 1.0
+		<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+		<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+		<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Frameset//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd">
+
+	MathML 2.0
+		<!DOCTYPE math PUBLIC "-//W3C//DTD MathML 2.0//EN" "http://www.w3.org/Math/DTD/mathml2/mathml2.dtd">
+
+	MathML 1.0
+		<!DOCTYPE math SYSTEM "http://www.w3.org/Math/DTD/mathml1/mathml.dtd">
+
+	SVG 1.1 Full
+		<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+}
+	Result := False;
 	Inc(FPosition, Length(DocTypeStartStr));
 	SkipWhiteSpaces;
-	Name := GetToken(tagNameDelimiter);
-	if Name = '' then
+	name := GetToken(tagNameDelimiter); //"HTML"
+	if name = '' then
 		Exit;
-	SetNodeName(Name);
+	SetNodeName(name);
 	SkipWhiteSpaces;
-	GetToken(tagNameDelimiter);
+	keyword := GetToken(tagNameDelimiter); //"PUBLIC" or "SYSTEM"
 	SkipWhiteSpaces;
-	if not ReadQuotedValue(FPublicID) then
-		Exit;
+
+	if SameText(keyword, 'PUBLIC') then
+	begin
+		if not ReadQuotedValue({var}FPublicID) then //  "-//x3C//DTD HTML 4.01 Transitional//EN"
+			FPublicID := ''; //12/20/2021  Support for '<!doctype html>' where there is no public ID
+	end;
+
 	SkipWhiteSpaces;
 	if FHtmlStr[FPosition] = '"' then
 	begin
 		if not ReadQuotedValue(FSystemID) then
-			Exit
+			FSystemID := '';
 	end;
-	Result := SkipTo(DocTypeEndStr)
+	Result := SkipTo(DocTypeEndStr);
+
+	FireEvent(FOnDocType);
 end;
 
 function THtmlReader.ReadElementNode: Boolean;
 var
-	TagName: TDomString;
+	tagName: TDomString;
 begin
-	Result := false;
-	if FPosition < Length(FHtmlStr) then
-	begin
-		TagName := LowerCase(GetToken(tagNameDelimiter));
-		if TagName = '' then
-			Exit;
-		FNodeType := ELEMENT_NODE;
-		SetNodeName(TagName);
-		FState := rsBeforeAttr;
-		FireEvent(FOnElementStart);
-		Result := true
-	end
+	Result := False;
+	if FPosition >= Length(FHtmlStr) then
+		Exit;
+
+	tagName := GetToken(tagNameDelimiter);
+	if tagName = '' then
+		Exit;
+	FNodeType := ELEMENT_NODE;
+	SetNodeName(tagName);
+	FState := rsBeforeAttr;
+	FireEvent(FOnElementStart);
+	Result := True
 end;
 
 function THtmlReader.ReadEndElementNode: Boolean;
@@ -470,10 +548,10 @@ end;
 
 function THtmlReader.ReadEntityNode: Boolean;
 var
-	CurrPos: Integer;
+	currPos: Integer;
 begin
 	Result := false;
-	CurrPos := FPosition;
+	currPos := FPosition;
 	Inc(FPosition);
 	if FPosition > Length(FHtmlStr) then
 		Exit;
@@ -490,23 +568,23 @@ begin
 		//FireEvent(FOnEntityReference);  VVV - remove, entity node is added in ReadXXXEntityNode
 	end
 	else
-		FPosition := CurrPos
+		FPosition := currPos
 end;
 
 function THtmlReader.ReadNamedEntityNode: Boolean;
 var
-	Start: Integer;
+	start: Integer;
 begin
 	Result := false;
 	if FPosition > Length(FHtmlStr) then
 		Exit;
-	Start := FPosition;
+	start := FPosition;
 	while (FPosition <= Length(FHtmlStr)) and IsEntityChar do
 		Inc(FPosition);
 	if (FPosition > Length(FHtmlStr)) or not IsEndEntityChar then
 		Exit;
 	FNodeType := ENTITY_REFERENCE_NODE;
-	SetNodeName(Copy(FHtmlStr, Start, FPosition - Start));
+	SetNodeName(Copy(FHtmlStr, start, FPosition - start));
 	Inc(FPosition);
 	FireEvent(FOnEntityReference);
 	Result := true
@@ -514,23 +592,23 @@ end;
 
 function THtmlReader.ReadNumericEntityNode: Boolean;
 var
-	Value: Word;
-	HexBase: Boolean;
+	value: Word;
+	hexBase: Boolean;
 begin
 	Result := false;
 	if FPosition > Length(FHtmlStr) then
 		Exit;
-	HexBase := IsHexEntityChar;
-	if HexBase then
+	hexBase := IsHexEntityChar;
+	if hexBase then
 		Inc(FPosition);
-	Value := 0;
-	while (FPosition <= Length(FHtmlStr)) and IsDigit(HexBase) do
+	value := 0;
+	while (FPosition <= Length(FHtmlStr)) and IsDigit(hexBase) do
 	begin
 		try
-			if HexBase then
-				Value := Value * 16 + HexValue(FHtmlStr[FPosition])
+			if hexBase then
+				value := value * 16 + HexValue(FHtmlStr[FPosition])
 			else
-				Value := Value * 10 + DecValue(FHtmlStr[FPosition])
+				value := value * 10 + DecValue(FHtmlStr[FPosition])
 		except
 			Exit
 		end;
@@ -540,22 +618,22 @@ begin
 		Exit;
 	Inc(FPosition);
 	FNodeType := TEXT_NODE;
-	FNodeValue := WideChar(Value);
+	FNodeValue := WideChar(value);
 	FireEvent(FOnTextNode);
 	Result := true
 end;
 
 function THtmlReader.ReadQuotedValue(var Value: TDomString): Boolean;
 var
-	QuotedChar: WideChar;
-	Start: Integer;
+	quotedChar: WideChar;
+	start: Integer;
 begin
-	QuotedChar := FHtmlStr[FPosition];
+	quotedChar := FHtmlStr[FPosition];
 	Inc(FPosition);
-	Start := FPosition;
-	Result := SkipTo(QuotedChar);
+	start := FPosition;
+	Result := SkipTo(quotedChar);
 	if Result then
-		Value := Copy(FHtmlStr, Start, FPosition - Start)
+		Value := Copy(FHtmlStr, start, FPosition - start-1); // -1 ==> don't include the trailing quote in the returned string
 end;
 
 function THtmlReader.ReadSpecialNode: Boolean;
@@ -564,34 +642,33 @@ begin
 	Inc(FPosition);
 	if FPosition > Length(FHtmlStr) then
 		Exit;
+
 	if IsStartDocumentType then
 		Result := ReadDocumentType
-	else
-	if IsStartCharacterData then
+	else if IsStartCharacterData then
 		Result := ReadCharacterData
-	else
-	if IsStartComment then
+	else if IsStartComment then
 		Result := ReadComment
 end;
 
 function THtmlReader.ReadTagNode: Boolean;
 var
-	CurrPos: Integer;
+	currPos: Integer;
 begin
-	Result := false;
-	CurrPos := FPosition;
+	Result := False;
+	currPos := FPosition;
 	Inc(FPosition);
 	if FPosition > Length(FHtmlStr) then
 		Exit;
 	if IsSlashChar then
 		Result := ReadEndElementNode
-	else
-	if IsSpecialTagChar then
+	else if IsSpecialTagChar then
 		Result := ReadSpecialNode
 	else
 		Result := ReadElementNode;
+
 	if not Result then
-		FPosition := CurrPos
+		FPosition := currPos;
 end;
 
 function THtmlReader.SkipTo(const Signature: TDomString): Boolean;
@@ -617,17 +694,22 @@ end;
 
 function THtmlReader.read: Boolean;
 begin
+	Result := False;
+
+	//Reset current state
 	FNodeType := NONE;
 	FPrefix := '';
 	FLocalName := '';
 	FNodeValue := '';
 	FPublicID := '';
 	FSystemID := '';
-	FIsEmptyElement := false;
-	Result := false;
+	FIsEmptyElement := False;
+
 	if FPosition > Length(FHtmlStr) then
 		Exit;
-	Result := true;
+
+	Result := True;
+
 	if FState in [rsBeforeValue, rsInValue, rsInQuotedValue] then
 	begin
 		if ReadValueNode then
@@ -672,14 +754,14 @@ end;
 
 procedure THtmlReader.ReadTextNode;
 var
-	Start: Integer;
+	start: Integer;
 begin
-	Start := FPosition;
+	start := FPosition;
 	repeat
 		Inc(FPosition)
 	until (FPosition > Length(FHtmlStr)) or IsStartMarkupChar;
 	FNodeType := TEXT_NODE;
-	FNodeValue:= Copy(FHtmlStr, Start, FPosition - Start);
+	FNodeValue:= Copy(FHtmlStr, start, FPosition - start);
 	FireEvent(FOnTextNode)
 end;
 
@@ -724,6 +806,13 @@ end;
 
 procedure THtmlReader.ReadElementTail;
 begin
+{
+	Reading the closing > of an element's opening tag:
+
+		<SPAN>
+			  ^
+			  ^
+}
 	SkipWhiteSpaces;
 	if (FPosition <= Length(FHtmlStr)) and IsSlashChar then
 	begin
@@ -731,7 +820,7 @@ begin
 		Inc(FPosition)
 	end;
 	SkipTo(WideChar(endTagChar));
-		FNodeType := ELEMENT_NODE;
+	FNodeType := ELEMENT_NODE;
 	FireEvent(FOnElementEnd)
 end;
 
@@ -745,6 +834,13 @@ procedure THtmlReader.SetNodeName(Value: TDomString);
 var
 	I: Integer;
 begin
+{
+	Split Value into Prefix and LocalName
+
+	NodeName is sythesized as Prefix:LocalName
+
+	If Prefix is empty, then NodeName is just LocalName.
+}
 	I := Pos(':', Value);
 	if I > 0 then
 	begin
