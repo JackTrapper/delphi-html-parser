@@ -42,7 +42,7 @@ type
 		constructor Create(ACapacity: Integer);
 		function EndWithWhiteSpace: Boolean;
 		function TailMatch(const Tail: TDomString): Boolean;
-		function ToString: TDomString;
+		function ToString: TDomString; //todo: override
 		procedure AppendText(const TextStr: TDomString);
 		property Length: Integer read FLength;
 	end;
@@ -620,9 +620,13 @@ function DumpDOM(const Node: TNode): string;
 		attrNode: TAttr;
 		s: string;
 	const
-		middlePrefix: string = #$251C#$2500#$2500+' '; // '|--- '
-		finalPrefix:  string = #$2570#$2500#$2500+' '; // '\--- '
-		nestedPrefix: string = #$2502'   ';            // '|    '
+//		middlePrefix: string = #$251C#$2500#$2500+' '; // '|--- '
+//		finalPrefix:  string = #$2570#$2500#$2500+' '; // '\--- '
+//		nestedPrefix: string = #$2502'   ';            // '|    '
+
+		middlePrefix: string = #$251C#$2500; // '|-'
+		finalPrefix:  string = #$2570#$2500; // '\-'
+		nestedPrefix: string = #$2502' ';    // '| '
 	begin
 		if (Node = nil) then
 		begin
