@@ -236,8 +236,8 @@ var
 begin
 	if IsDebuggerPresent then
 	begin
-		s := Format(Fmt, Args);
-		OutputDebugString(PChar(s));
+//		s := Format(Fmt, Args);
+//		OutputDebugString(PChar(s));
 	end;
 end;
 
