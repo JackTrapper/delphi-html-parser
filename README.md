@@ -1,6 +1,11 @@
 Delphi DOM HTML parser and converter
 ====================================
 
+- Example 1 - [Parsing HTML string into a TDocument](#example1)
+- Example 2 - [Get HTML text from a **TDocument**](#example2)
+- Example 3 - [Get a string reprentation of the DOM tree](#example3)
+
+
 Initialization
 --------------
 
@@ -33,9 +38,9 @@ Parser is implemented as several modules:
 - `Formatter.pas` - HTML DOM tree converters
 
 Programming Guide
------------------
+=================
 
-**Example 1** &mdash; Parse HTML into **TDocument** object
+<A name="example1"></A>**Example 1** &mdash; Parse HTML into **TDocument** object
 
 To convert a string containing HTML, into a DOM **TDocument** object, use the **THTMLParser.Parse**:
 
@@ -48,7 +53,7 @@ var
 
 ---------
 
-**Example 2** &mdash; Get full HTML text from a **TDocument**
+<A name="example2"></A>**Example 2** &mdash; Get full HTML text from a **TDocument**
 
 
 To convert a **TDocument** into an HTML string, use **THtmlFormatter.GetHTML** class in `Formatter.pas`:
@@ -70,7 +75,7 @@ returns:
 
 ------------
 
-**Example 3** &mdash; Get a string reprentation of the DOM tree
+<A href="example3"></A>**Example 3** &mdash; Get a string reprentation of the DOM tree
 
 Use the function **Formatter.DumpDOM** to get a representation of the DOM tree of a **Node**:
 
@@ -127,10 +132,9 @@ The returned DOM string will be:
 
 
 Version History
-===============
+---------------
 
-12/22/2021
-----------
+**12/22/2021**
 
 - Formatter.pas: Added DumpDOM function, which dumps a text-based tree of the document tree
 - TBaseFormatter: Fixed node iteration so starts with the Document child nodes - including doctype
@@ -162,8 +166,7 @@ Version History
   - TDocument: CreateAttribute now lowercases the attribute name
   - TNode: Added TextContent property
 
-12/20/2021
-----------
+**12/20/2021**
 
 - Fixed TNode: NodeValue was not calling GetNodeValue getter
 - fixed attribute lookups to be case insensitive (like everything else in html)
