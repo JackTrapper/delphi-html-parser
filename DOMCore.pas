@@ -186,7 +186,7 @@ type
 		property NodeType: TNodeType read GetNodeType;
 		property NodeName: TDomString read GetNodeName;
 		property NodeValue: TDomString read GetNodeValue write SetNodeValue;
-		property TextContent: TDomString read GetTextContent;
+		property TextContent: TDomString read GetTextContent; //TODO: SetTextContent (https://dom.spec.whatwg.org/#dom-node-textcontent)
 		property ParentNode: TNode read GetParentNode;
 		property ChildNodes: TNodeList read FChildNodes;
 		property FirstChild: TNode read GetFirstChild;
@@ -1614,8 +1614,8 @@ end;
 
 function TDocument.GetDocumentElement: TElement;
 var
-	Child: TNode;
-	I: Integer;
+	child: TNode;
+	i: Integer;
 begin
 {
 	This is a convenience attribute that allows direct access to the child node
@@ -1624,12 +1624,12 @@ begin
 	The document element of a document is the element whose parent is that document,
 	if it exists; otherwise null.
 }
-	for I := 0 to ChildNodes.length - 1 do
+	for i := 0 to ChildNodes.length - 1 do
 	begin
-		Child := ChildNodes.item(I);
-		if Child.NodeType = ELEMENT_NODE then
+		child := ChildNodes.item(i);
+		if child.NodeType = ELEMENT_NODE then
 		begin
-			Result := Child as TElement;
+			Result := child as TElement;
 			Exit
 		end
 	end;
