@@ -8,6 +8,7 @@ uses
 type
 	THtmlParserTests = class(TTestCase)
 	published
+		procedure TestCreateHtmlDocument;
 		procedure TestParseString;
 		procedure TestParseString_Html4Transitional;
 		procedure TestParseString_Html5;
@@ -20,12 +21,16 @@ type
 		procedure TestParseString_DocTypes_LegacyAppCompat;
 		procedure TestParseString_FailsToParse;
 		procedure TestParseString_NodesAfterHtml;
+		procedure TestInvalidFirstCharacterOfTagName;
+		procedure TestNewHtmlDocumentHasHeadAndBody;
 	end;
 
 	THtmlFormatterTests = class(TTestCase)
 	published
 		procedure TestGetHtml;
 		procedure TestGetHtml_IncludesDocType;
+		procedure TestAmpersandNotAlwaysEscaped;
+		procedure TestCrashParser;
 	end;
 
 implementation
@@ -33,7 +38,85 @@ implementation
 uses
 	HtmlParser, Formatter;
 
+type
+	TObjectHolder = class(TInterfacedObject)
+	private
+		FValue: TObject;
+	public
+		constructor Create(AObject: TObject);
+		destructor Destroy; override;
+	end;
+
+function AutoFree(AObject: TObject): IUnknown;
+begin
+	if AObject <> nil then
+		Result := TObjectHolder.Create(AObject)
+	else
+		Result := nil;
+end;
+
 { THtmlParserTests }
+
+procedure THtmlParserTests.TestCreateHtmlDocument;
+var
+	doc: TDocument;
+begin
+	//The simple DOMImplementation class function to make us a new empty html document
+	doc := DOMImplementation.createHtmlDocument('');
+	AutoFree(doc);
+	CheckTrue(doc <> nil);
+end;
+
+procedure THtmlParserTests.TestInvalidFirstCharacterOfTagName;
+var
+	s: string;
+	doc: TDocument;
+begin
+(*
+	https://html.spec.whatwg.org/#parsing
+
+	invalid-first-character-of-tag-name
+	This error occurs if the parser encounters a code point that is not an ASCII alpha
+	where first code point of a start tag name or an end tag name is expected.
+	If a start tag was expected such code point and a preceding U+003C (<) is treated as
+	text content, and all content that follows is treated as markup.
+	Whereas, if an end tag was expected, such code point and all content that follows up
+	to a U+003E (>) code point (if present) or to the end of the input stream is treated
+	as a comment.
+
+	For example, consider the following markup:
+
+		<42></42>
+
+	This will be parsed into:
+
+	html
+		- head
+		- body
+			- #text: <42>
+			- #comment: 42
+*)
+	doc := THtmlParser.Parse(s);
+end;
+
+procedure THtmlParserTests.TestNewHtmlDocumentHasHeadAndBody;
+var
+	doc: TDocument;
+begin
+{
+	Spec has a DOMImplementation.CreateHtmlDocument(title?) method,
+	and it creates a head a body node automatically.
+
+	In fact, if you parse an empty string as html, you will still still
+	a document with HEAD and BODY elements.
+}
+	doc := DOMImplementation.CreateHtmlDocument;
+	AutoFree(doc);
+
+	CheckTrue(doc <> nil);
+	CheckTrue(doc.Head <> nil);
+	CheckTrue(doc.Body <> nil);
+end;
 
 procedure THtmlParserTests.TestParseString;
 var
@@ -44,13 +127,14 @@ begin
 
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
+	AutoFree(doc);
 
 	Status(DumpDOM(doc));
-{
-	HTML
-		BODY
-			#text: "Hello, world!"
-}
+	{
+		HTML
+			BODY
+				#text: "Hello, world!"
+	}
 	CheckEquals(1, doc.ChildNodes.Length);
 end;
 
@@ -266,7 +350,6 @@ begin
 
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
-
 	Status(DumpDOM(doc));
 {
 	#doctype HTML
@@ -330,15 +413,7 @@ var
 	szHtml: string;
 	doc: TDocument;
 begin
-	szHtml :=
-		'<html>'+#13#10+
-		'<body>'+#13#10+
-		'	Hello, world!<BR>'+#13#10+
-		' </body>'+#13#10+
-		'</html>'+#13#10+
-		'<!--Comment-->'+#13#10+
-		'More text.'+#13#10+
-		'<IMG>';
+	szHtml := '<html><body>Hello, world!</body></html><IMG>';
 
 	Status(szHtml);
 
@@ -383,13 +458,16 @@ begin
 	doc := THtmlParser.Parse(szHtml);
 	CheckTrue(doc <> nil);
 
-	Status(#13#10+'DOM tree'+#13#10+'----------'+DumpDOM(doc));
+	Status(#13#10+
+			'DOM tree'+#13#10+
+			'----------'+#13#10+
+			DumpDOM(doc));
 {
 	HTML
 		BODY
 			#text: "Hello, world! http://sourceforge.net/projects/htmlp?arg=0&arg2=0"
 }
-	CheckEquals(1, doc.ChildNodes.Length, 'Document should have only top level element: html. Known bug that HTML Parser does move nodes after body to child of body');
+	CheckEquals(1, doc.ChildNodes.Length, 'Document should have only one top level element: html. Known bug that HTML Parser does not move nodes after body to be a child of body');
 end;
 
 procedure THtmlParserTests.TestParseString_TrailingTextAddedToBodyNewTextNode;
@@ -473,6 +551,106 @@ end;
 
 { THtmlFormatterTests }
 
+procedure THtmlFormatterTests.TestAmpersandNotAlwaysEscaped;
+var
+	szHtml: string;
+	doc: TDocument;
+	szHtmlAfter: string;
+const
+	ExpectedHTML =
+		'<html>'+#13#10+
+		'<head></head>'+#13#10+
+		'<body>'+#13#10+
+		'	<a href="?bill&amp;ted">Bill and Ted</a>'+#13#10+
+		'</body>'+#13#10+
+		'</html>';
+begin
+{
+	Start: <A href="?bill&ted">Bill and Ted</A>
+
+	It is not an error to leave the & unescaped, because &ted; is not a named character reference.
+	If we parse it, the value of the href attribute is "?bill&ted".
+
+	If we get the HTML back, then it should also realize that it doesn't need to escape it:
+
+	Bad:  <a href="?bill&amp;ted">Bill and Ted</a>
+	Good: <a href="?bill&ted">Bill and Ted</a>
+
+	Correct HTML5
+	=============
+
+	#document
+	- HTML
+		- HEAD
+		- BODY
+		 - A href="?bill&ted"
+			- #text: "Bill and Ted"
+}
+	szHtml := '<A href="?bill&ted">Bill and Ted</A>';
+	Status(
+			'Original HTML'+#13#10+
+			'-------------'+#13#10+
+			szHtml);
+
+	doc := THtmlParser.Parse(szHtml);
+	CheckTrue(doc <> nil);
+
+	Status(#13#10+
+			'DOM'+#13#10+
+			'----------------'+#13#10+
+			DumpDOM(doc));
+
+	//doc/body/a.href
+	CheckEquals('?bill&ted', TElement(doc.Body.ChildNodes[0]).getAttribute('href'));
+
+	CheckEquals('Bill and Ted', doc.Body.ChildNodes[0].ChildNodes[0].NodeValue);
+end;
+
+procedure THtmlFormatterTests.TestCrashParser;
+var
+	s: string;
+	doc: TDocument;
+begin
+	s := '<D';
+	Status('Original HTML'+#13#10+
+			 '=============');
+
+{
+	The correct DOM tree for '<D' is:
+
+		#document
+			head
+			body
+
+	And that's it.
+
+	Except this exposes a bug in our parser. At the time of parsing the <D, is before
+		the HTML element.
+
+		Line 1: <D
+
+	So omit invalid tags if they're before HTML?
+	Except them if hte 2nd line is <html>:
+
+		Line 1: <D
+		Line 2: <HTML>
+
+	then the DOM retroactively does add it to body:
+
+		#document
+			- HEAD
+			- BODY
+				- D <html=""
+
+
+
+
+}
+	doc := THtmlParser.Parse(s);
+	CheckTrue(doc <> nil);
+	doc.Free;
+end;
+
 procedure THtmlFormatterTests.TestGetHtml;
 var
 	s: string;
@@ -533,6 +711,23 @@ begin
 	CheckTrue(s <> '');
 
 	CheckEquals('<!DOCTYPE', Copy(s, 1, 9));
+end;
+
+{ TObjectHolder }
+
+constructor TObjectHolder.Create(AObject: TObject);
+begin
+	inherited Create;
+
+	FValue := AObject;
+end;
+
+destructor TObjectHolder.Destroy;
+begin
+	FValue.Free;
+	FValue := nil;
+
+	inherited;
 end;
 
 initialization

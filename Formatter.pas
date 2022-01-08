@@ -68,8 +68,8 @@ type
 		procedure ProcessAttributes(Element: TElement); virtual;
 		procedure ProcessCDataSection(CDataSection: TCDataSection); virtual;
 		procedure ProcessComment(Comment: TComment); virtual;
-		procedure ProcessEntityReference(EntityReference: TEntityReference); virtual;
-//		procedure ProcessNotation(Notation: TNotation); virtual;
+//		procedure ProcessEntityReference(EntityReference: TEntityReference); virtual; removed in HTML5
+//		procedure ProcessNotation(Notation: TNotation); virtual; removed in HTML5
 		procedure ProcessProcessingInstruction(ProcessingInstruction: TProcessingInstruction); virtual;
 		procedure ProcessTextNode(TextNode: TTextNode); virtual;
 	public
@@ -111,7 +111,6 @@ type
 		function GetImageText(Node: TElement): TDomString; virtual;
 		procedure AppendText(const TextStr: TDomString); override;
 		procedure ProcessElement(Element: TElement); override;
-		procedure ProcessEntityReference(EntityReference: TEntityReference); override;
 		procedure ProcessTextNode(TextNode: TTextNode); override;
 	public
 		constructor Create;
@@ -138,20 +137,20 @@ const
 		OL_TAG, P_TAG, PRE_TAG, TABLE_TAG, TD_TAG, TH_TAG, TITLE_TAG, UL_TAG
 	];
 
-//	WhatToShow flags
+//	WhatToShow flags (https://dom.spec.whatwg.org/#interface-nodefilter)
 	SHOW_ALL                    = $FFFFFFFF;
 	SHOW_ELEMENT                = $00000001;
 	SHOW_ATTRIBUTE              = $00000002;
 	SHOW_TEXT                   = $00000004;
 	SHOW_CDATA_SECTION          = $00000008;
-	SHOW_ENTITY_REFERENCE       = $00000010;
-	SHOW_ENTITY                 = $00000020;
+//	SHOW_ENTITY_REFERENCE       = $00000010; //legacy
+	SHOW_ENTITY                 = $00000020; //legacy
 	SHOW_PROCESSING_INSTRUCTION = $00000040;
 	SHOW_COMMENT                = $00000080;
 	SHOW_DOCUMENT               = $00000100;
 	SHOW_DOCUMENT_TYPE          = $00000200;
 	SHOW_DOCUMENT_FRAGMENT      = $00000400;
-	SHOW_NOTATION               = $00000800;
+	SHOW_NOTATION               = $00000800; //legacy
 
 function IsWhiteSpace(W: WideChar): Boolean;
 begin
@@ -268,10 +267,10 @@ begin
 	DOCUMENT_TYPE_NODE:				if (FWhatToShow and SHOW_DOCUMENT_TYPE) <> 0 then ProcessDocumentTypeNode(Node as TDocumentType);
 	TEXT_NODE:							if (FWhatToShow and SHOW_TEXT) <> 0 then ProcessTextNode(Node as TTextNode);
 	CDATA_SECTION_NODE:				if (FWhatToShow and SHOW_CDATA_SECTION) <> 0 then ProcessCDataSection(Node as TCDataSection);
-	ENTITY_REFERENCE_NODE:			if (FWhatToShow and SHOW_ENTITY_REFERENCE) <> 0 then ProcessEntityReference(Node as TEntityReference);
+//	ENTITY_REFERENCE_NODE:			if (FWhatToShow and SHOW_ENTITY_REFERENCE) <> 0 then ProcessEntityReference(Node as TEntityReference); removed in html5
 	PROCESSING_INSTRUCTION_NODE:	if (FWhatToShow and SHOW_PROCESSING_INSTRUCTION) <> 0 then ProcessProcessingInstruction(Node as TProcessingInstruction);
 	COMMENT_NODE:						if (FWhatToShow and SHOW_COMMENT) <> 0 then ProcessComment(Node as TComment);
-//	NOTATION_NODE:						if (FWhatToShow and SHOW_NOTATION) <> 0 then ProcessNotation(Node as Notation)
+//	NOTATION_NODE:						if (FWhatToShow and SHOW_NOTATION) <> 0 then ProcessNotation(Node as Notation); removed in HTML5
 	else
 		//Unknown node type
 	end
@@ -384,13 +383,10 @@ begin
 	Dec(FDepth)
 end;
 
-procedure TBaseFormatter.ProcessEntityReference(EntityReference: TEntityReference);
-begin
-	if FExpandEntities then
-		AppendText(GetEntValue(EntityReference.nodeName))
-	else
-		AppendText('&' + EntityReference.nodeName + ';')
-end;
+//procedure TBaseFormatter.ProcessEntityReference(EntityReference: TEntityReference);
+//begin
+	//Removed in HTML5
+//end;
 {
 procedure TBaseFormatter.ProcessNotation(Notation: TNotation);
 begin
@@ -446,7 +442,7 @@ begin
 	for I := 0 to Element.childNodes.length - 1 do
 	begin
 		Node := Element.childNodes.item(I);
-		if not (Node.nodeType in [TEXT_NODE, ENTITY_REFERENCE_NODE]) then
+		if not (Node.nodeType in [TEXT_NODE]) then
 			Exit
 	end;
 	Result := true
@@ -461,7 +457,7 @@ begin
 		AppendText('"')
 	end
 	else
-		AppendText(' ' + Attr.name + '="' + Attr.name + '"')
+		AppendText(' ' + Attr.name + '="' + Attr.Value + '"')
 end;
 
 procedure THtmlFormatter.ProcessComment(Comment: TComment);
@@ -515,7 +511,7 @@ end;
 constructor TTextFormatter.Create;
 begin
 	inherited Create;
-	FWhatToShow := SHOW_ELEMENT or SHOW_TEXT or SHOW_ENTITY_REFERENCE;
+	FWhatToShow := SHOW_ELEMENT or SHOW_TEXT;
 	FExpandEntities := True
 end;
 
@@ -593,14 +589,6 @@ begin
 	end;
 	if HtmlTag.Number in ViewAsBlockTags then
 		AppendParagraph
-end;
-
-procedure TTextFormatter.ProcessEntityReference(EntityReference: TEntityReference);
-begin
-	if EntityReference.nodeName = 'nbsp' then
-		AppendText(' ')
-	else
-		inherited ProcessEntityReference(EntityReference)
 end;
 
 procedure TTextFormatter.ProcessTextNode(TextNode: TTextNode);

@@ -25,62 +25,8 @@ uses
 		- Searching for tag names in HtmlTagList is now case insensitive
 }
 
-const
-	MAX_TAGS_COUNT  = 128;
-	MAX_FLAGS_COUNT = 32;
-
 type
-	THtmlTagSet = set of 0..MAX_TAGS_COUNT - 1;
-
-	THtmlTagFlags = set of 0..MAX_FLAGS_COUNT - 1;
-
-	THtmlTag = class
-	private
-		FName: TDomString;
-		FNumber: Integer;
-		FParserFlags: THtmlTagFlags;
-		FFormatterFlags: THtmlTagFlags;
-	public
-		constructor Create(const AName: TDomString; ANumber: Integer; AParserFlags, AFormatterFlags: THtmlTagFlags);
-		property Name: TDomString read FName;
-		property Number: Integer read FNumber;
-		property ParserFlags: THtmlTagFlags read FParserFlags;
-		property FormatterFlags: THtmlTagFlags read FFormatterFlags;
-	end;
-
-	TCompareTag = function(Tag: THtmlTag): Integer of object;
-
-	THtmlTagList = class
-	private
-		FList: TList;
-		FUnknownTag: THtmlTag;
-		FSearchName: TDomString;
-		FSearchNumber: Integer;
-		function CompareName(Tag: THtmlTag): Integer;
-		function CompareNumber(Tag: THtmlTag): Integer;
-		function GetTag(Compare: TCompareTag): THtmlTag;
-	public
-		constructor Create;
-		destructor Destroy; override;
-		function GetTagByName(const Name: TDomString): THtmlTag;
-		function GetTagByNumber(Number: Integer): THtmlTag;
-	end;
-
-	TURLSchemes = class(TStringList)
-	private
-		FMaxLen: Integer;
-	public
-		constructor Create;
-		function Add(const S: String): Integer; override;
-		function IsURL(const S: String): Boolean;
-		function GetScheme(const S: String): String;
-		property MaxLen: Integer read FMaxLen;
-	end;
-
-	//Global singleton lists of HTML tags and URL schemes
-	function HtmlTagList: THtmlTagList;
-	function URLSchemes: TURLSchemes;
-
+	TTagID = type Integer;
 const
 	UNKNOWN_TAG    = 0;
 	A_TAG          = 1;
@@ -183,12 +129,68 @@ const
 	PreserveWhiteSpaceTags  = [PRE_TAG];
 	NeedFindParentTags      = [COL_TAG, COLGROUP_TAG, DD_TAG, DT_TAG, LI_TAG, OPTION_TAG, P_TAG, TABLE_TAG, TBODY_TAG, TD_TAG, TFOOT_TAG, TH_TAG, THEAD_TAG, TR_TAG];
 	ListItemParentTags      = [DIR_TAG, MENU_TAG, OL_TAG, UL_TAG];
-	DefItemParentTags       = [DL_TAG];
+	DefItemParentTags       = [DL_TAG]; //<dl name="Description list"><dt name="Description term">word</dt><dd name="Decription details">definition</dd></dl>
 	TableSectionParentTags  = [TABLE_TAG];
 	ColParentTags           = [COLGROUP_TAG];
 	RowParentTags           = [TABLE_TAG, TBODY_TAG, TFOOT_TAG, THEAD_TAG];
 	CellParentTags          = [TR_TAG];
 	OptionParentTags        = [OPTGROUP_TAG, SELECT_TAG];
+
+const
+	MAX_TAGS_COUNT  = 128;
+	MAX_FLAGS_COUNT = 32;
+
+type
+	THtmlTagSet = set of 0..MAX_TAGS_COUNT - 1;
+	THtmlTagFlags = set of 0..MAX_FLAGS_COUNT - 1;
+
+	THtmlTag = class
+	private
+		FName: TDomString;
+		FNumber: TTagID;
+		FParserFlags: THtmlTagFlags;
+		FFormatterFlags: THtmlTagFlags;
+	public
+		constructor Create(const AName: TDomString; ANumber: Integer; AParserFlags, AFormatterFlags: THtmlTagFlags);
+		property Name: TDomString read FName;
+		property Number: TTagID read FNumber;
+		property ParserFlags: THtmlTagFlags read FParserFlags;
+		property FormatterFlags: THtmlTagFlags read FFormatterFlags;
+	end;
+
+	TCompareTag = function(Tag: THtmlTag): Integer of object;
+
+	THtmlTagList = class
+	private
+		FList: TList;
+		FUnknownTag: THtmlTag;
+		FSearchName: TDomString;
+		FSearchNumber: Integer;
+		function CompareName(Tag: THtmlTag): Integer;
+		function CompareNumber(Tag: THtmlTag): Integer;
+		function GetTag(Compare: TCompareTag): THtmlTag;
+	public
+		constructor Create;
+		destructor Destroy; override;
+		function GetTagByName(const Name: TDomString): THtmlTag;
+		function GetTagByNumber(Number: Integer): THtmlTag;
+	end;
+
+	TURLSchemes = class(TStringList)
+	private
+		FMaxLen: Integer;
+	public
+		constructor Create;
+		function Add(const S: String): Integer; override;
+		function IsURL(const S: String): Boolean;
+		function GetScheme(const S: String): String;
+		property MaxLen: Integer read FMaxLen;
+	end;
+
+	//Global singleton lists of HTML tags and URL schemes
+	function HtmlTagList: THtmlTagList;
+	function URLSchemes: TURLSchemes;
+
 
 implementation
 

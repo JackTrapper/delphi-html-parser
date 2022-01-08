@@ -7,6 +7,9 @@ unit DomCore;
 	History
 	=======
 
+	1/7/2021
+			- Removed TEntityReference (per HTML5)
+
 	12/22/2021
 			- Removed TDocumentType.Entities, Notations, and InternalSubset (per HTML5)
 			- Removed TNode.IsSupported (per HTML5)
@@ -52,14 +55,14 @@ const
 	ATTRIBUTE_NODE                 =  2;	//An Attribute of an Element. Attributes no longer implement the Node interface as of DOM4.
 	TEXT_NODE                      =  3;	//The actual Text inside an Element or Attr.
 	CDATA_SECTION_NODE             =  4;	//A CDATASection, such as <!CDATA[[ … ]]>.
-	ENTITY_REFERENCE_NODE          =  5;	//An XML Entity Reference node, such as &foo;. Removed in DOM4.
-	ENTITY_NODE                    =  6;	//An XML <!ENTITY …> node. Removed in DOM4.
+//	ENTITY_REFERENCE_NODE          =  5;	//An XML Entity Reference node, such as &foo;. Removed in DOM4.
+//	ENTITY_NODE                    =  6;	//An XML <!ENTITY …> node. Removed in DOM4.
 	PROCESSING_INSTRUCTION_NODE    =  7;	//A ProcessingInstruction of an XML document, such as <?xml-stylesheet … ?>.
 	COMMENT_NODE                   =  8;	//A Comment node, such as <!-- … -->.
 	DOCUMENT_NODE                  =  9;	//A Document node.
 	DOCUMENT_TYPE_NODE             = 10;	//A DocumentType node, such as <!DOCTYPE html>.
 	DOCUMENT_FRAGMENT_NODE         = 11;	//A DocumentFragment node.
-	NOTATION_NODE                  = 12;	//An XML <!NOTATION ...> node. Removed in DOM4.
+//	NOTATION_NODE                  = 12;	//An XML <!NOTATION ...> node. Removed in DOM4.
 
 	END_ELEMENT_NODE               = 255; // extension
 
@@ -91,13 +94,18 @@ const
 	DTD_XHTML_FRAMESET = 6;
 
 type
+	//TODO: Change this to just UnicodeString. Yes old DOM interfaces created a
+	//type called DomString. But that was meant to define a set of concepts of what
+	//their strings require. Those requirements are met by UnicodeString (and WideString).
+	//So we just define UnicodeString as a modernizer for Delphi 5.
 	TDomString = {$IFDEF UNICODE}UnicodeString{$ELSE}WideString{$ENDIF};
 
 	DomException = class(Exception)
 	private
 		FCode: Integer;
 	public
-		constructor Create(code: Integer);
+		constructor Create(ErrorCode: Integer); overload;
+		constructor Create(ErrorCode: Integer; AdditionalMessage: string); overload;
 		property code: Integer read FCode;
 	end;
 
@@ -279,7 +287,6 @@ type
 	TAttr = class(TNode)
 	private
 		function GetOwnerElement: TElement;
-		function GetLength: Integer;
 		function GetSpecified: Boolean;
 	protected
 		function GetNodeValue: TDomString; override;
@@ -287,14 +294,14 @@ type
 		function GetParentNode: TNode; override;
 		function CanInsert(node: TNode): Boolean; override;
 		function ExportNode(ownerDocument: TDocument; deep: Boolean): TNode; override;
-		procedure SetNodeValue(const value: TDomString); override;
+		procedure SetNodeValue(const Value: TDomString); override;
 		function GetTextContent: TDomString; override;
 	public
 		function cloneNode(deep: Boolean): TNode; override;
 		property name: TDomString read GetNodeName;
 		property specified: Boolean read GetSpecified;
-		property value: TDomString read GetNodeValue write SetNodeValue;
-		property ownerElement: TElement read GetOwnerElement;
+		property Value: TDomString read GetNodeValue write SetNodeValue;
+		property ownerElement: TElement read GetOwnerElement; //DOM Level2
 	end;
 
 	TElement = class(TNode)
@@ -323,15 +330,6 @@ type
 		procedure removeAttributeNS(const namespaceURI, localName: TDomString);
 		property tagName: TDomString read GetNodeName;
 		property isEmpty: Boolean read FIsEmpty write FIsEmpty;
-	end;
-
-	TEntityReference = class(TNode)
-	protected
-		function GetNodeType: TNodeType; override;
-		function ExportNode(otherDocument: TDocument; deep: Boolean): TNode; override;
-		constructor Create(ownerDocument: TDocument; const name: TDomString);
-	public
-		function cloneNode(deep: Boolean): TNode; override;
 	end;
 
 	TProcessingInstruction = class(TNode)
@@ -388,6 +386,8 @@ type
 		FSearchNodeLists: TList;
 		function GetDocumentElement: TElement;
 		function GetDocType: TDocumentType;
+		function GetHead: TElement;
+		function GetBody: TElement;
 	protected
 		function GetNodeName: TDomString; override;
 		function GetNodeType: TNodeType; override;
@@ -409,7 +409,7 @@ type
 		function createCDATASection(const data: TDomString): TCDATASection;
 		function createProcessingInstruction(const target, data: TDomString): TProcessingInstruction;
 		function createAttribute(const name: TDomString): TAttr;
-		function createEntityReference(const name: TDomString): TEntityReference;
+		//function createEntityReference(const name: TDomString): TEntityReference; removed in HTML 5
 		function importNode(importedNode: TNode; deep: Boolean): TNode;
 		function createElementNS(const namespaceURI, qualifiedName: TDomString): TElement;
 		function createAttributeNS(const namespaceURI, qualifiedName: TDomString): TAttr;
@@ -417,6 +417,10 @@ type
 		property Doctype: TDocumentType read GetDocType; //DONE: BUGBUG Should be readonly
 		property NamespaceURIList: TNamespaceURIList read FNamespaceURIList;
 		property DocumentElement: TElement read GetDocumentElement;
+
+		// DOM Tree Accessors - https://html.spec.whatwg.org/#dom-tree-accessors
+		property Head: TElement read GetHead; //Returns the head element.
+		property Body: TElement read GetBody;	//Returns the body element.
 	end;
 
 {
@@ -552,10 +556,10 @@ begin
 	Result := I;
 end;
 
-constructor DomException.Create(code: Integer);
+constructor DomException.Create(ErrorCode: Integer);
 begin
-	inherited Create(ExceptionMsg[code]);
-	FCode := code
+	inherited Create(ExceptionMsg[ErrorCode]);
+	FCode := ErrorCode
 end;
 
 constructor TNode.Create(ownerDocument: TDocument; const namespaceURI, qualifiedName: TDomString; withNS: Boolean);
@@ -789,7 +793,8 @@ var
 	I: Integer;
 begin
 	if not CanInsert(newChild) or newChild.ancestorOf(Self) then
-		raise DomException.Create(HIERARCHY_REQUEST_ERR);
+		raise DomException.Create(HIERARCHY_REQUEST_ERR,
+				'NewChild: '+newChild.NodeName+'='+newChild.NodeValue);
 	if newChild <> refChild then
 	begin
 		if Assigned(refChild) then
@@ -828,6 +833,22 @@ end;
 
 function TNode.ReplaceChild(newChild, oldChild: TNode): TNode;
 begin
+	//1. If parent is not a Document, DocumentFragment, or Element node, then throw a "HierarchyRequestError" DOMException.
+	if not (Self.NodeType in [DOCUMENT_NODE, DOCUMENT_FRAGMENT_NODE, ELEMENT_NODE]) then
+		raise DomException.Create(HIERARCHY_REQUEST_ERR);
+
+	//3. If child’s parent is not parent, then throw a "NotFoundError" DOMException.
+	if oldChild.ParentNode <> Self then
+		raise DomException.Create(NOT_FOUND_ERR);
+
+	//4. If node is not a DocumentFragment, DocumentType, Element, or CharacterData node, then throw a "HierarchyRequestError" DOMException.
+	if not (newChild is TDocumentFragment) and not (newChild is TDocumentType) and not (newChild is TElement) and not (newChild is TCharacterData) then
+		raise DomException.Create(HIERARCHY_REQUEST_ERR);
+
+	//5. If either node is a Text node and parent is a document, or node is a doctype and parent is not a document, then throw a "HierarchyRequestError" DOMException.
+	if ((newChild is TTextNode) and (Self is TDocument)) or ((newChild is TDocumentType) and (not (Self is TDocument))) then
+		raise DomException.Create(HIERARCHY_REQUEST_ERR);
+
 	if newChild <> oldChild then
 	begin
 		insertBefore(newChild, oldChild);
@@ -1148,29 +1169,9 @@ begin
 	Result := node
 end;
 
-constructor TEntityReference.Create(ownerDocument: TDocument; const name: TDomString);
-begin
-	inherited Create(OwnerDocument, '', name, false)
-end;
-
-function TEntityReference.GetNodeType: TNodeType;
-begin
-	Result := ENTITY_REFERENCE_NODE
-end;
-
-function TEntityReference.ExportNode(otherDocument: TDocument; deep: Boolean): TNode;
-begin
-	Result := otherDocument.createEntityReference(NodeName)
-end;
-
-function TEntityReference.cloneNode(deep: Boolean): TNode;
-begin
-	Result := OwnerDocument.createEntityReference(NodeName)
-end;
-
 constructor TCharacterData.Create(ownerDocument: TDocument; const data: TDomString);
 begin
-	inherited Create(OwnerDocument, '', '', false);
+	inherited Create(OwnerDocument, '', '', False);
 	SetNodeValue(data)
 end;
 
@@ -1240,12 +1241,12 @@ end;
 
 function TComment.GetNodeName: TDomString;
 begin
-	Result := '#comment'
+	Result := '#comment';
 end;
 
 function TComment.GetNodeType: TNodeType;
 begin
-	Result := COMMENT_NODE
+	Result := COMMENT_NODE;
 end;
 
 function TComment.ExportNode(otherDocument: TDocument; deep: Boolean): TNode;
@@ -1260,7 +1261,7 @@ end;
 
 function TTextNode.GetNodeName: TDomString;
 begin
-	Result := '#text'
+	Result := '#text';
 end;
 
 function TTextNode.GetNodeType: TNodeType;
@@ -1291,47 +1292,9 @@ begin
 	Result := FParentNode as TElement
 end;
 
-function TAttr.GetLength: Integer;
-var
-	Node: TNode;
-	I: Integer;
-begin
-	Result := 0;
-	for I := 0 to ChildNodes.length - 1 do
-	begin
-		Node := ChildNodes.item(I);
-		if Node.NodeType = TEXT_NODE then
-			Inc(Result, (Node as TTextNode).length)
-		else
-		if Node.NodeType = ENTITY_REFERENCE_NODE then
-			Inc(Result)
-	end
-end;
-
 function TAttr.GetNodeValue: TDomString;
-var
-	Node: TNode;
-	Len, Pos, I, J: Integer;
 begin
-	Len := GetLength;
-	SetLength(Result, Len);
-	Pos := 0;
-	for I := 0 to ChildNodes.length - 1 do
-	begin
-		Node := ChildNodes.item(I);
-		if Node.NodeType = TEXT_NODE then
-			for J := 1 to (Node as TTextNode).length do
-			begin
-				Inc(Pos);
-				Result[Pos] := Node.FNodeValue[J]
-			end
-		else
-		if Node.NodeType = ENTITY_REFERENCE_NODE then
-		begin
-			Inc(Pos);
-			Result[Pos] := GetEntValue(Node.NodeName)
-		end
-	end
+	Result := FNodeValue;
 end;
 
 function TAttr.GetNodeType: TNodeType;
@@ -1339,10 +1302,9 @@ begin
 	Result := ATTRIBUTE_NODE
 end;
 
-procedure TAttr.SetNodeValue(const value: TDomString);
+procedure TAttr.SetNodeValue(const Value: TDomString);
 begin
-	FChildNodes.Clear(false);
-	AppendChild(OwnerDocument.CreateTextNode(value))
+	FNodeValue := Value;
 end;
 
 function TAttr.GetParentNode: TNode;
@@ -1352,7 +1314,8 @@ end;
 
 function TAttr.GetSpecified: Boolean;
 begin
-	Result := true
+	// useless; always returns true
+	Result := True;
 end;
 
 function TAttr.GetTextContent: TDomString;
@@ -1362,7 +1325,7 @@ end;
 
 function TAttr.CanInsert(node: TNode): Boolean;
 begin
-	Result := node.NodeType in [ENTITY_REFERENCE_NODE, TEXT_NODE]
+	Result := False; //Attribute value is the value. There is no more child nodes. (You're thinking of XML, which is something else)
 end;
 
 function TAttr.ExportNode(ownerDocument: TDocument; deep: Boolean): TNode;
@@ -1380,7 +1343,7 @@ end;
 constructor TElement.Create(ownerDocument: TDocument; const namespaceURI, qualifiedName: TDomString; withNS: Boolean);
 begin
 	inherited Create(OwnerDocument, NamespaceURI, UpperCase(qualifiedName), withNS);
-	FAttributes := TNamedNodeMap.Create(Self)
+	FAttributes := TNamedNodeMap.Create(Self);
 end;
 
 function TElement.GetNodeType: TNodeType;
@@ -1399,7 +1362,7 @@ end;
 
 function TElement.CanInsert(node: TNode): Boolean;
 begin
-	Result := not (node.NodeType in [ENTITY_NODE, DOCUMENT_NODE, DOCUMENT_TYPE_NODE, NOTATION_NODE]);
+	Result := not (node.NodeType in [DOCUMENT_NODE, DOCUMENT_TYPE_NODE]);
 end;
 
 function TElement.ExportNode(otherDocument: TDocument; deep: Boolean): TNode;
@@ -1534,7 +1497,8 @@ end;
 
 constructor TDocumentFragment.Create(ownerDocument: TDocument);
 begin
-	inherited Create(OwnerDocument, '', '', false)
+	inherited Create(OwnerDocument, '', '', False);
+	FNodeName := '#document-fragment';
 end;
 
 function TDocumentFragment.GetNodeType: TNodeType;
@@ -1558,7 +1522,7 @@ end;
 
 function TDocumentFragment.CanInsert(node: TNode): Boolean;
 begin
-	Result := not (node.NodeType in [ENTITY_NODE, DOCUMENT_NODE, DOCUMENT_TYPE_NODE, NOTATION_NODE]);
+	Result := not (node.NodeType in [DOCUMENT_NODE, DOCUMENT_TYPE_NODE]);
 end;
 
 function TDocumentFragment.ExportNode(otherDocument: TDocument; deep: Boolean): TNode;
@@ -1581,6 +1545,8 @@ begin
 
 	FNamespaceURIList := TNamespaceURIList.Create;
 	FSearchNodeLists := TList.Create;
+
+	FNodeName := '#document';
 end;
 
 destructor TDocument.Destroy;
@@ -1588,6 +1554,38 @@ begin
 	FreeAndNil(FNamespaceURIList);
 	FreeAndNil(FSearchNodeLists);
 	inherited Destroy
+end;
+
+function TDocument.GetBody: TElement;
+var
+	i: Integer;
+	html: TElement;
+	node: TNode;
+begin
+{
+	Returns the body element.
+
+	The body element of a document is the first of the html element's children that is
+	either a body element or a frameset element, or null if there is no such element.
+
+	The body attribute, on getting, must return the body element of the document (either a body element, a frameset element, or null).
+}
+	Result := nil;
+
+	html := Self.DocumentElement;
+	if html = nil then
+		Exit;
+
+	for i := 0 to html.ChildNodes.Length-1 do
+	begin
+		node := html.ChildNodes.Item(i);
+		if node.NodeType <> ELEMENT_NODE then
+			Continue;
+		if not SameText(node.NodeName, 'BODY') then
+			Continue;
+		Result := node as TElement;
+		Exit;
+	end;
 end;
 
 function TDocument.GetDocType: TDocumentType;
@@ -1634,6 +1632,37 @@ begin
 		end
 	end;
 	Result := nil
+end;
+
+function TDocument.GetHead: TElement;
+var
+	i: Integer;
+	html: TElement;
+	node: TNode;
+begin
+{
+	Returns the head element.
+
+	The head element of a document is the first head element that is a child of the html element, if there is one, or null otherwise.
+
+	The head attribute, on getting, must return the head element of the document (a head element or null).
+}
+	Result := nil;
+
+	html := Self.DocumentElement;
+	if html = nil then
+		Exit;
+
+	for i := 0 to html.ChildNodes.Length-1 do
+	begin
+		node := html.ChildNodes.Item(i);
+		if node.NodeType <> ELEMENT_NODE then
+			Continue;
+		if not SameText(node.NodeName, 'HEAD') then
+			Continue;
+		Result := node as TElement;
+		Exit;
+	end;
 end;
 
 function TDocument.GetNodeName: TDomString;
@@ -1692,7 +1721,7 @@ end;
 
 function TDocument.createElement(const tagName: TDomString): TElement;
 begin
-	Result := TElement.Create(Self, '', tagName, false)
+	Result := TElement.Create(Self, '', tagName, False)
 end;
 
 function TDocument.createDocumentFragment: TDocumentFragment;
@@ -1729,10 +1758,11 @@ begin
 	//an attribute named "Contoso:ID" into "contoso:id".
 end;
 
-function TDocument.createEntityReference(const name: TDomString): TEntityReference;
-begin
-	Result := TEntityReference.Create(Self, name)
-end;
+//function TDocument.createEntityReference(const name: TDomString): TEntityReference;
+//begin
+//	//Removed in HTML 5
+//	Result := TEntityReference.Create(Self, name)
+//end;
 
 function TDocument.importNode(importedNode: TNode; deep: Boolean): TNode;
 begin
@@ -1840,16 +1870,21 @@ begin
 
 	doc := TDocument.Create;
 
+	// DOCTYPE html
 	doc.AppendChild(doc.createDocType('html', '', ''));
-	html := doc.DocumentElement.AppendChild(doc.CreateElement('HTML')) as TElement;
-	head := html.AppendChild(doc.CreateElement('HEAD')) as TElement;
 
+	// Add HTML
+	html := doc.AppendChild(doc.CreateElement('HTML')) as TElement;
+
+	// Add HEAD
+	head := html.AppendChild(doc.CreateElement('HEAD')) as TElement;
 	if Title <> '' then
 	begin
 		titleNode := head.AppendChild(doc.CreateElement('TITLE')) as TElement;
 		titleNode.AppendChild(doc.createTextNode(Title));
 	end;
 
+	// Add BODY
 	html.AppendChild(doc.createElement('BODY'));
 
 	Result := doc;
@@ -1859,6 +1894,12 @@ class function DOMImplementation.createDocument(const namespaceURI, qualifiedNam
 begin
 	Result := createEmptyDocument(doctype);
 	Result.AppendChild(Result.createElementNS(namespaceURI, qualifiedName))
+end;
+
+constructor DomException.Create(ErrorCode: Integer; AdditionalMessage: string);
+begin
+	inherited Create(ExceptionMsg[ErrorCode]+#13#10+AdditionalMessage);
+	FCode := ErrorCode
 end;
 
 end.
