@@ -490,10 +490,18 @@ begin
 		parent := RequireHeadElement;
 	end
 	else
-		raise Exception.Create('Got a text node is no place to put it');
+		raise Exception.Create('Got a text node with no place to put it');
 
 	if parent = nil then
 		raise Exception.Create('Text node parent is nil');
+
+	//Check if the existing node is a #text. If so then append our text to that one
+	if (parent.ChildNodes.Length > 0) and (parent.LastChild.NodeType = TEXT_NODE) then
+	begin
+		textNode := parent.LastChild as TTextNode;
+		textNode.NodeValue := textNode.NodeValue + s;
+		Exit;
+	end;
 
 	textNode := FHtmlDocument.createTextNode(s);
 	parent.AppendChild(textNode);
