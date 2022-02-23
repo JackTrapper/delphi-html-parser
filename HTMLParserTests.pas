@@ -1,4 +1,4 @@
-unit HTMLParserTests;
+﻿unit HTMLParserTests;
 
 interface
 
@@ -23,6 +23,7 @@ type
 		procedure TestParseString_NodesAfterHtml;
 		procedure TestInvalidFirstCharacterOfTagName;
 		procedure TestNewHtmlDocumentHasHeadAndBody;
+		procedure TestCustomElement;
 	end;
 
 	THtmlFormatterTests = class(TTestCase)
@@ -36,7 +37,7 @@ type
 implementation
 
 uses
-	HtmlParser, Formatter;
+	Html4Parser, HtmlParser, Formatter;
 
 type
 	TObjectHolder = class(TInterfacedObject)
@@ -209,6 +210,9 @@ procedure THtmlParserTests.TestParseString_DocTypes;
 
 		Status(DumpDOM(doc));
 
+		CheckNotNull(doc.DocType, 'doc.DocType');
+		if doc.DocType = nil then
+			Exit;
 		CheckEquals(ExpectedName, doc.DocType.NodeName, DocType);
 		CheckEquals(ExpectedPublicID, doc.DocType.PublicID, DocType);
 		CheckEquals(ExpectedSystemID, doc.DocType.SystemID, DocType);
@@ -284,6 +288,9 @@ procedure THtmlParserTests.TestParseString_DocTypes_LegacyAppCompat;
 
 		Status(DumpDOM(doc));
 
+		CheckNotNull(doc.DocType, 'doc.DocType');
+		if doc.DocType = nil then
+			Exit;
 		CheckEquals(ExpectedName, doc.DocType.NodeName, DocType);
 		CheckEquals(ExpectedPublicID, doc.DocType.PublicID, DocType);
 		CheckEquals(ExpectedSystemID, doc.DocType.SystemID, DocType);
@@ -712,6 +719,19 @@ begin
 
 	CheckEquals('<!DOCTYPE', Copy(s, 1, 9));
 end;
+
+procedure THtmlParserTests.TestCustomElement;
+var
+	html: string;
+	doc: TDocument;
+begin
+	html := '<oofy>adsfadf</oofy>';
+
+	doc := THtmlParser.Parse(html);
+	CheckTrue(doc <> nil);
+	AutoFree(doc);
+end;
+
 
 { TObjectHolder }
 

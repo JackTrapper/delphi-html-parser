@@ -331,7 +331,7 @@ var
 	WC: WideChar;
 begin
 	WC := FHtmlStr[FPosition];
-	Result := Ord(WC) in hexEntity
+	Result := Ord(WC) in hexEntity;
 end;
 
 function THtmlReader.IsNumericEntity: Boolean;
@@ -422,8 +422,8 @@ var
 begin
 	if IsDebuggerPresent then
 	begin
-		s := Callback;
-		OutputDebugStringW(PWideChar(s));
+//		s := Callback;
+//		OutputDebugStringW(PWideChar(s));
 	end;
 end;
 
@@ -433,8 +433,8 @@ var
 begin
 	if True then
 	begin
-		s := Format(fmt, Args);
-		OutputDebugString(PChar('[THtmlReader] '+s));
+//		s := Format(fmt, Args);
+//		OutputDebugString(PChar('[THtmlReader] '+s));
 	end;
 end;
 
