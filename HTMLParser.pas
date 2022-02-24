@@ -202,14 +202,17 @@ type
 		FPublicIdentifierMissing: Boolean;
 		FSystemIdentifierMissing: Boolean;
 
+
 		procedure SetPublicIdentifier(const Value: UnicodeString);
 		procedure SetSystemIdentifier(const Value: UnicodeString);
+	protected
+		procedure AppendCharacter(const ch: UCS4Char); override; //to the Name
+		procedure AppendSystemIdentifier(const ch: UCS4Char);
 	public
 		Name: UnicodeString;
 		ForceQuirks: Boolean;
 
 		constructor Create;
-		procedure AppendCharacter(const ch: UCS4Char); override;
 
 		property PublicIdentifier: UnicodeString read FPublicIdentifier write SetPublicIdentifier;
 		property SystemIdentifier: UnicodeString read FSystemIdentifier write SetSystemIdentifier;
@@ -268,7 +271,7 @@ type
 	private
 		FStream: TInputStream;
 		FState2: TTokenizerState;
-		FReturnState: TTokenizerState;
+		FReturnState2: TTokenizerState;
 		FCurrentInputCharacter: UCS4Char;
 		FCurrentToken: THtmlToken;
 		FReconsume: Boolean;
@@ -279,6 +282,7 @@ type
 		FScripting: Boolean;
 		FFramesetOK: Boolean;
 		FTemporaryBuffer: UCS4String;
+		FCharacterReferenceCode: Cardinal;
 
 		FParserPause: Boolean;
 		FEOF: Boolean;
@@ -298,11 +302,11 @@ type
 		//	DOCTYPE, start tag, end tag, comment, character, end-of-file.
 		//	DOCTYPE tokens have a name, a public identifier, a system identifier, and a force-quirks flag.
 		procedure EmitToken(const AToken: THtmlToken);
-			procedure EmitDoctypeToken;	//Emit the current DOCTYPE token
+			procedure EmitCurrentDocTypeToken;	//Emit the current DOCTYPE token
 			procedure EmitStartTag;			//Emit the current StartTag token
 			procedure EmitEndTag;         //Emit the current EndTag token
 			procedure EmitCurrentTagToken; //Emits the current token (whether it be a StartTag or EndTag)
-			procedure EmitCommentToken;	//Emit the current Comment token
+			procedure EmitCurrentCommentToken;	//Emit the current Comment token
 			procedure EmitCharacter(const Character: UCS4Char); //Emit a Character token
 			procedure EmitEndOfFileToken;	//Emit an EndOfFile token
 
@@ -310,6 +314,7 @@ type
 
 		procedure SetInsertionMode(const Mode: TInsertionMode);
 		procedure SetState(const State: TTokenizerState);
+		procedure SetReturnState(const State: TTokenizerState);
 		procedure ResetTheInsertionModeAppropriately;
 		function Consume: UCS4Char;
 
@@ -317,6 +322,9 @@ type
 		function GetCurrentTagToken: TTagToken; //13.2.5.80 Numeric character reference end state
 
 		procedure AppendToTemporaryBuffer(const Value: UCS4Char);
+		procedure AppendToCurrentAttributeValue(const Value: UCS4Char); 
+		procedure AppendToCurrentCommentData(const Value: UCS4Char);
+
 		procedure FlushCodePointsConsumed;
 
 
@@ -581,6 +589,16 @@ begin
 	LogFmt('Parse Error: %s', [ParseErrorName]);
 end;
 
+procedure THtmlTokenizer.AppendToCurrentAttributeValue(const Value: UCS4Char);
+begin
+
+end;
+
+procedure THtmlTokenizer.AppendToCurrentCommentData(const Value: UCS4Char);
+begin
+
+end;
+
 procedure THtmlTokenizer.AppendToTemporaryBuffer(const Value: UCS4Char);
 begin
 	UCS4StrCat(FTemporaryBuffer, Value);
@@ -624,86 +642,86 @@ begin
 			Exit;
 
 		case FState2 of
-		tsDataState: DoDataState; //13.2.5.1 Data state
-		tsRCDataState: DoRCDATAState;	//13.2.5.2 RCDATA state
-		tsRawTextState: DoRawTextState;	 //13.2.5.3 RAWTEXT state
-		tsScriptDataState: DoScriptDataState; //13.2.5.4 Script data state
-		tsPlaintextState: DoPlaintextState; //13.2.5.5 PLAINTEXT state
-		tsTagOpenState: DoTagOpenState; //13.2.5.6 Tag open state
-		tsEndTagOpenState: DoEndTagOpenState; //13.2.5.7 End tag open state
-		tsTagNameState: DoTagNameState; //13.2.5.8 Tag name state
-		tsRCDATALessThanSignState: DoRCDATALessThanSignState; //13.2.5.9 RCDATA less-than sign state
-		tsRCDATAEndTagOpenState: DoRCDATAEndTagOpenState; //13.2.5.10 RCDATA end tag open state
-		tsRCDATAEndTagNameState: DoRCDATAEndTagNameState; //13.2.5.11 RCDATA end tag name state
-		tsRAWTEXTLessThanSignState: DoRAWTEXTLessThanSignState; //13.2.5.12 RAWTEXT less-than sign state
-		tsRAWTEXTEndTagOpenState: DoRAWTEXTEndTagOpenState; //13.2.5.13 RAWTEXT end tag open state
-		tsRAWTEXTEndTagNameState: DoRAWTEXTEndTagNameState; //13.2.5.14 RAWTEXT end tag name state
-		tsScriptDataLessThanSignState: DoScriptDataLessThanSignState; //13.2.5.15 Script data less-than sign state
-		tsScriptDataEndTagOpenState: DoScriptDataEndTagOpenState; //13.2.5.16 Script data end tag open state
-		tsScriptDataEndTagNameState: DoScriptDataEndTagNameState; //13.2.5.17 Script data end tag name state
-		tsScriptDataEscapeStartState: DoScriptDataEscapeStartState; //13.2.5.18 Script data escape start state
-		tsScriptDataEscapeStartDashState: DoScriptDataEscapeStartDashState; //13.2.5.19 Script data escape start dash state
-		tsScriptDataEscapedState: DoScriptDataEscapedState; //13.2.5.20 Script data escaped state
-		tsScriptDataEscapedDashState: DoScriptDataEscapedDashState; //13.2.5.21 Script data escaped dash state
-		tsScriptDataEscapedDashDashState: DoScriptDataEscapedDashDashState; //13.2.5.22 Script data escaped dash dash state
-		tsScriptDataEscapedLessThanSignState: DoScriptDataEscapedLessThanSignState; //13.2.5.23 Script data escaped less-than sign state
-		tsScriptDataEscapedEndTagOpenState: DoScriptDataEscapedEndTagOpenState; //13.2.5.24 Script data escaped end tag open state
-		tsScriptDataEscapedEndTagNameState: DoScriptDataEscapedEndTagNameState; //13.2.5.25 Script data escaped end tag name state
-		tsScriptDataDoubleEscapedStartState: DoScriptDataDoubleEscapedStartState; //13.2.5.26 Script data double escape start state
-		tsScriptDataDoubleEscapedState: DoScriptDataDoubleEscapedState; //13.2.5.27 Script data double escaped state
-		tsScriptDataDoubleEscapedDashState: DoScriptDataDoubleEscapedDashState; //13.2.5.28 Script data double escaped dash state
-		tsScriptDataDoubleEscapedDashDashState: DoScriptDataDoubleEscapedDashDashState; //13.2.5.29 Script data double escaped dash dash state
-		tsScriptDataDoubleEscapedLessThanSignState: DoScriptDataDoubleEscapedLessThanSignState; //13.2.5.30 Script data double escaped less-than sign state
-		tsScriptDataDoubleEscapeEndState: DoScriptDataDoubleEscapeEndState; //13.2.5.31 Script data double escape end state
-		tsBeforeAttributeNameState: DoBeforeAttributeNameState; //13.2.5.32 Before attribute name state
-		tsAttributeNameState: DoAttributeNameState; //13.2.5.33 Attribute name state
-		tsAfterAttributeNameState: DoAfterAttributeNameState; //13.2.5.34 After attribute name state
-		tsBeforeAttributeValueState: DoBeforeAttributeValueState; //13.2.5.35 Before attribute value state
-		tsAttributeValueDoubleQuotedState: DoAttributeValueDoubleQuotedState; //13.2.5.36 Attribute value (double-quoted) state
-		tsAttributeValueSingleQuotedState: DoAttributeValueSingleQuotedState; //13.2.5.37 Attribute value (single-quoted) state
+		tsDataState: 				DoDataState; //13.2.5.1 Data state
+		tsRCDataState: 			DoRCDATAState;	//13.2.5.2 RCDATA state
+		tsRawTextState: 			DoRawTextState;	 //13.2.5.3 RAWTEXT state
+		tsScriptDataState: 		DoScriptDataState; //13.2.5.4 Script data state
+		tsPlaintextState: 		DoPlaintextState; //13.2.5.5 PLAINTEXT state
+		tsTagOpenState: 			DoTagOpenState; //13.2.5.6 Tag open state
+		tsEndTagOpenState: 		DoEndTagOpenState; //13.2.5.7 End tag open state
+		tsTagNameState: 			DoTagNameState; //13.2.5.8 Tag name state
+		tsRCDATALessThanSignState:				DoRCDATALessThanSignState; //13.2.5.9 RCDATA less-than sign state
+		tsRCDATAEndTagOpenState:				DoRCDATAEndTagOpenState; //13.2.5.10 RCDATA end tag open state
+		tsRCDATAEndTagNameState:				DoRCDATAEndTagNameState; //13.2.5.11 RCDATA end tag name state
+		tsRAWTEXTLessThanSignState:			DoRAWTEXTLessThanSignState; //13.2.5.12 RAWTEXT less-than sign state
+		tsRAWTEXTEndTagOpenState:				DoRAWTEXTEndTagOpenState; //13.2.5.13 RAWTEXT end tag open state
+		tsRAWTEXTEndTagNameState:				DoRAWTEXTEndTagNameState; //13.2.5.14 RAWTEXT end tag name state
+		tsScriptDataLessThanSignState:		DoScriptDataLessThanSignState; //13.2.5.15 Script data less-than sign state
+		tsScriptDataEndTagOpenState:			DoScriptDataEndTagOpenState; //13.2.5.16 Script data end tag open state
+		tsScriptDataEndTagNameState:			DoScriptDataEndTagNameState; //13.2.5.17 Script data end tag name state
+		tsScriptDataEscapeStartState:			DoScriptDataEscapeStartState; //13.2.5.18 Script data escape start state
+		tsScriptDataEscapeStartDashState:	DoScriptDataEscapeStartDashState; //13.2.5.19 Script data escape start dash state
+		tsScriptDataEscapedState:				DoScriptDataEscapedState; //13.2.5.20 Script data escaped state
+		tsScriptDataEscapedDashState:			DoScriptDataEscapedDashState; //13.2.5.21 Script data escaped dash state
+		tsScriptDataEscapedDashDashState:	DoScriptDataEscapedDashDashState; //13.2.5.22 Script data escaped dash dash state
+		tsScriptDataEscapedLessThanSignState:	DoScriptDataEscapedLessThanSignState; //13.2.5.23 Script data escaped less-than sign state
+		tsScriptDataEscapedEndTagOpenState:		DoScriptDataEscapedEndTagOpenState; //13.2.5.24 Script data escaped end tag open state
+		tsScriptDataEscapedEndTagNameState:		DoScriptDataEscapedEndTagNameState; //13.2.5.25 Script data escaped end tag name state
+		tsScriptDataDoubleEscapedStartState:	DoScriptDataDoubleEscapedStartState; //13.2.5.26 Script data double escape start state
+		tsScriptDataDoubleEscapedState:			DoScriptDataDoubleEscapedState; //13.2.5.27 Script data double escaped state
+		tsScriptDataDoubleEscapedDashState:		DoScriptDataDoubleEscapedDashState; //13.2.5.28 Script data double escaped dash state
+		tsScriptDataDoubleEscapedDashDashState:		DoScriptDataDoubleEscapedDashDashState; //13.2.5.29 Script data double escaped dash dash state
+		tsScriptDataDoubleEscapedLessThanSignState:	DoScriptDataDoubleEscapedLessThanSignState; //13.2.5.30 Script data double escaped less-than sign state
+		tsScriptDataDoubleEscapeEndState:	DoScriptDataDoubleEscapeEndState; //13.2.5.31 Script data double escape end state
+		tsBeforeAttributeNameState:			DoBeforeAttributeNameState; //13.2.5.32 Before attribute name state
+		tsAttributeNameState:					DoAttributeNameState; //13.2.5.33 Attribute name state
+		tsAfterAttributeNameState:				DoAfterAttributeNameState; //13.2.5.34 After attribute name state
+		tsBeforeAttributeValueState:			DoBeforeAttributeValueState; //13.2.5.35 Before attribute value state
+		tsAttributeValueDoubleQuotedState:	DoAttributeValueDoubleQuotedState; //13.2.5.36 Attribute value (double-quoted) state
+		tsAttributeValueSingleQuotedState:	DoAttributeValueSingleQuotedState; //13.2.5.37 Attribute value (single-quoted) state
 		tsAttributeValueUnquotedState: DoAttributeValueUnquotedState; //13.2.5.38 Attribute value (unquoted) state
-		tsAfterAttributeValueQuotedState: DoAfterAttributeValueQuotedState; //13.2.5.39 After attribute value (quoted) state
-		tsSelfClosingStartTagState: DoSelfClosingStartTagState; //13.2.5.40 Self-closing start tag state
-		tsBogusCommentState: DoBogusCommentState; //13.2.5.41 Bogus comment state
-		tsMarkupDeclarationOpenState: DoMarkupDeclarationOpenState; //13.2.5.42 Markup declaration open state
-		tsCommentStartState: DoCommentStartState; //13.2.5.43 Comment start state
-		tsCommentStartDashState: DoCommentStartDashState; //13.2.5.44 Comment start dash state
-		tsCommentState: DoCommentState; //13.2.5.45 Comment state
-		tsCommentLessThanSignState: DoCommentLessThanSignState; //13.2.5.46 Comment less-than sign state
-		tsCommentLessThanSignBangState: DoCommentLessThanSignBangState; //13.2.5.47 Comment less-than sign bang state
-		tsCommentLessThanSignBangDashState: DoCommentLessThanSignBangDashState; //13.2.5.48 Comment less-than sign bang dash state
-		tsCommentLessThanSignBangDashDashState: DoCommentLessThanSignBangDashDashState; //13.2.5.49 Comment less-than sign bang dash dash state
-		tsCommentEndDashState: DoCommentEndDashState; //13.2.5.50 Comment end dash state
-		tsCommentEndState: DoCommentEndState; //13.2.5.51 Comment end state
-		tsCommentEndBangState: DoCommentEndBangState; //13.2.5.52 Comment end bang state
-		tsDOCTYPEState: DoDOCTYPEState; //13.2.5.53 DOCTYPE state
-		tsBeforeDOCTYPENameState: DoBeforeDOCTYPENameState; //13.2.5.54 Before DOCTYPE name state
-		tsDOCTYPENameState: DoDOCTYPENameState; //13.2.5.55 DOCTYPE name state
-		tsAfterDOCTYPENameState: DoAfterDOCTYPENameState; //13.2.5.56 After DOCTYPE name state
-		tsAfterDOCTYPEPublicKeywordState: DoAfterDOCTYPEPublicKeywordState; //13.2.5.57 After DOCTYPE public keyword state
-		tsBeforeDOCTYPEPublicIdentifierState: DoBeforeDOCTYPEPublicIdentifierState; //13.2.5.58 Before DOCTYPE public identifier state
-		tsDOCTYPEPublicIdentifierDoubleQuotedState: DoDOCTYPEPublicIdentifierDoubleQuotedState; //13.2.5.59 DOCTYPE public identifier (double-quoted) state
-		tsDOCTYPEPublicIdentifierSingleQuotedState: DoDOCTYPEPublicIdentifierSingleQuotedState; //13.2.5.60 DOCTYPE public identifier (single-quoted) state
-		tsAfterDOCTYPEPublicIdentifierState: DoAfterDOCTYPEPublicIdentifierState; //13.2.5.61 After DOCTYPE public identifier state
-		tsBetweenDOCTYPEPublicAndSystemIdentifiersState: DoBetweenDOCTYPEPublicAndSystemIdentifiersState; //13.2.5.62 Between DOCTYPE public and system identifiers state
-		tsAfterDOCTYPESystemKeywordState: DoAfterDOCTYPESystemKeywordState; //13.2.5.63 After DOCTYPE system keyword state
-		tsBeforeDOCTYPESystemIdentifierState: DoBeforeDOCTYPESystemIdentifierState; //13.2.5.64 Before DOCTYPE system identifier state
-		tsDOCTYPESystemIdentifierDoubleQuotedState: DoDOCTYPESystemIdentifierDoubleQuotedState; //13.2.5.65 DOCTYPE system identifier (double-quoted) state
-		tsDOCTYPESystemIdentifierSingleQuotedState: DoDOCTYPESystemIdentifierSingleQuotedState; //13.2.5.66 DOCTYPE system identifier (single-quoted) state
-		tsAfterDOCTYPESystemIdentifierState: DoAfterDOCTYPESystemIdentifierState; //13.2.5.67 After DOCTYPE system identifier state
-		tsBogusDOCTYPEState: DoBogusDOCTYPEState; //13.2.5.68 Bogus DOCTYPE state
-		tsCDATASectionState: DoCDATASectionState; //13.2.5.69 CDATA section state
-		tsCDATASectionBracketState: DoCDATASectionBracketState; //13.2.5.70 CDATA section bracket state
-		tsCDATASectionEndState: DoCDATASectionEndState; //13.2.5.71 CDATA section end state
-		tsCharacterReferenceState: DoCharacterReferenceState; //13.2.5.72 Character reference state
-		tsNamedCharacterReferenceState: DoNamedCharacterReferenceState; //13.2.5.73 Named character reference state
-		tsAmbiguousAmpersandState: DoAmbiguousAmpersandState; //13.2.5.74 Ambiguous ampersand state
-		tsNumericCharacterReferenceState: DoNumericCharacterReferenceState; //13.2.5.75 Numeric character reference state
-		tsHexadecimalCharacterReferenceStartState: DoHexadecimalCharacterReferenceStartState; //13.2.5.76 Hexadecimal character reference start state
-		tsDecimalCharacterReferenceStartState: DoDecimalCharacterReferenceStartState; //13.2.5.77 Decimal character reference start state
-		tsHexadecimalCharacterReferenceState: DoHexadecimalCharacterReferenceState; //13.2.5.78 Hexadecimal character reference state
-		tsDecimalCharacterReferenceState: DoDecimalCharacterReferenceState; //13.2.5.79 Decimal character reference state
-		tsNumericCharacterReferenceEndState: DoNumericCharacterReferenceEndState; //13.2.5.80 Numeric character reference end state
+		tsAfterAttributeValueQuotedState:	DoAfterAttributeValueQuotedState; //13.2.5.39 After attribute value (quoted) state
+		tsSelfClosingStartTagState:			DoSelfClosingStartTagState; //13.2.5.40 Self-closing start tag state
+		tsBogusCommentState:						DoBogusCommentState; //13.2.5.41 Bogus comment state
+		tsMarkupDeclarationOpenState:			DoMarkupDeclarationOpenState; //13.2.5.42 Markup declaration open state
+		tsCommentStartState:						DoCommentStartState; //13.2.5.43 Comment start state
+		tsCommentStartDashState:				DoCommentStartDashState; //13.2.5.44 Comment start dash state
+		tsCommentState:							DoCommentState; //13.2.5.45 Comment state
+		tsCommentLessThanSignState:			DoCommentLessThanSignState; //13.2.5.46 Comment less-than sign state
+		tsCommentLessThanSignBangState:		DoCommentLessThanSignBangState; //13.2.5.47 Comment less-than sign bang state
+		tsCommentLessThanSignBangDashState:	DoCommentLessThanSignBangDashState; //13.2.5.48 Comment less-than sign bang dash state
+		tsCommentLessThanSignBangDashDashState:	DoCommentLessThanSignBangDashDashState; //13.2.5.49 Comment less-than sign bang dash dash state
+		tsCommentEndDashState:					DoCommentEndDashState; //13.2.5.50 Comment end dash state
+		tsCommentEndState:						DoCommentEndState; //13.2.5.51 Comment end state
+		tsCommentEndBangState:					DoCommentEndBangState; //13.2.5.52 Comment end bang state
+		tsDOCTYPEState:							DoDOCTYPEState; //13.2.5.53 DOCTYPE state
+		tsBeforeDOCTYPENameState:				DoBeforeDOCTYPENameState; //13.2.5.54 Before DOCTYPE name state
+		tsDOCTYPENameState:						DoDOCTYPENameState; //13.2.5.55 DOCTYPE name state
+		tsAfterDOCTYPENameState:				DoAfterDOCTYPENameState; //13.2.5.56 After DOCTYPE name state
+		tsAfterDOCTYPEPublicKeywordState:	DoAfterDOCTYPEPublicKeywordState; //13.2.5.57 After DOCTYPE public keyword state
+		tsBeforeDOCTYPEPublicIdentifierState:			DoBeforeDOCTYPEPublicIdentifierState; //13.2.5.58 Before DOCTYPE public identifier state
+		tsDOCTYPEPublicIdentifierDoubleQuotedState:	DoDOCTYPEPublicIdentifierDoubleQuotedState; //13.2.5.59 DOCTYPE public identifier (double-quoted) state
+		tsDOCTYPEPublicIdentifierSingleQuotedState:	DoDOCTYPEPublicIdentifierSingleQuotedState; //13.2.5.60 DOCTYPE public identifier (single-quoted) state
+		tsAfterDOCTYPEPublicIdentifierState:			DoAfterDOCTYPEPublicIdentifierState; //13.2.5.61 After DOCTYPE public identifier state
+		tsBetweenDOCTYPEPublicAndSystemIdentifiersState:	DoBetweenDOCTYPEPublicAndSystemIdentifiersState; //13.2.5.62 Between DOCTYPE public and system identifiers state
+		tsAfterDOCTYPESystemKeywordState:				DoAfterDOCTYPESystemKeywordState; //13.2.5.63 After DOCTYPE system keyword state
+		tsBeforeDOCTYPESystemIdentifierState:			DoBeforeDOCTYPESystemIdentifierState; //13.2.5.64 Before DOCTYPE system identifier state
+		tsDOCTYPESystemIdentifierDoubleQuotedState:	DoDOCTYPESystemIdentifierDoubleQuotedState; //13.2.5.65 DOCTYPE system identifier (double-quoted) state
+		tsDOCTYPESystemIdentifierSingleQuotedState:	DoDOCTYPESystemIdentifierSingleQuotedState; //13.2.5.66 DOCTYPE system identifier (single-quoted) state
+		tsAfterDOCTYPESystemIdentifierState:			DoAfterDOCTYPESystemIdentifierState; //13.2.5.67 After DOCTYPE system identifier state
+		tsBogusDOCTYPEState:					DoBogusDOCTYPEState; //13.2.5.68 Bogus DOCTYPE state
+		tsCDATASectionState:					DoCDATASectionState; //13.2.5.69 CDATA section state
+		tsCDATASectionBracketState:		DoCDATASectionBracketState; //13.2.5.70 CDATA section bracket state
+		tsCDATASectionEndState:				DoCDATASectionEndState; //13.2.5.71 CDATA section end state
+		tsCharacterReferenceState:			DoCharacterReferenceState; //13.2.5.72 Character reference state
+		tsNamedCharacterReferenceState:	DoNamedCharacterReferenceState; //13.2.5.73 Named character reference state
+		tsAmbiguousAmpersandState:			DoAmbiguousAmpersandState; //13.2.5.74 Ambiguous ampersand state
+		tsNumericCharacterReferenceState:				DoNumericCharacterReferenceState; //13.2.5.75 Numeric character reference state
+		tsHexadecimalCharacterReferenceStartState:	DoHexadecimalCharacterReferenceStartState; //13.2.5.76 Hexadecimal character reference start state
+		tsDecimalCharacterReferenceStartState:			DoDecimalCharacterReferenceStartState; //13.2.5.77 Decimal character reference start state
+		tsHexadecimalCharacterReferenceState:			DoHexadecimalCharacterReferenceState; //13.2.5.78 Hexadecimal character reference state
+		tsDecimalCharacterReferenceState:				DoDecimalCharacterReferenceState; //13.2.5.79 Decimal character reference state
+		tsNumericCharacterReferenceEndState:			DoNumericCharacterReferenceEndState; //13.2.5.80 Numeric character reference end state
 		else
 			//unknown state? There's no way out.
 			AddParseError('Unknown-parser-state-'+TypInfo.GetEnumName(TypeInfo(TTokenizerState), Ord(FState2)));
@@ -722,7 +740,7 @@ begin
 	case ch of
 	$0026: //U+0026 AMPERSAND (&)
 		begin
-			FReturnState := tsDataState;
+			SetReturnState(tsDataState);
 			SetState(tsCharacterReferenceState);
 		end;
 	$003C: //U+003C LESS-THAN SIGN (<)
@@ -748,12 +766,12 @@ begin
 	//https://html.spec.whatwg.org/multipage/parsing.html#rcdata-state
 	ch := Consume; //consume the next input character
 	case ch of
-	Ord('&'): //U+0026 AMPERSAND (&)
+	$0026: //U+0026 AMPERSAND (&)
 		begin
-			FReturnState := tsRCDATAState;
+			SetReturnState(tsRCDATAState);
 			SetState(tsCharacterReferenceState);
 		end;
-	Ord('<'): FReturnState := tsRCDATALessThanSignState; //U+003C LESS-THAN SIGN
+	$003C: SetReturnState(tsRCDATALessThanSignState); //U+003C LESS-THAN SIGN
 	$0000: //U+0000 NULL
 		begin
 			AddParseError('unexpected-null-character');
@@ -793,7 +811,7 @@ begin
 	//https://html.spec.whatwg.org/multipage/parsing.html#script-data-state
 	ch := Consume; //consume the next input character
 	case ch of
-	Ord('<'): SetState(tsScriptDataLessThanSignState); //U+003C LESS-THAN SIGN (<)
+	$003C: SetState(tsScriptDataLessThanSignState); //U+003C LESS-THAN SIGN (<)
 	$0000: //U+0000 NULL
 		begin
 			AddParseError('unexpected-null-character');
@@ -1084,20 +1102,23 @@ begin
 		//U+000C FORM FEED (FF)
 		//U+0020 SPACE
 		//TODO: If the current end tag token is an appropriate end tag token,
-		//then switch to the before attribute name state.
-		//Otherwise, treat it as per the "anything else" entry below.
+		//	SetState(tsbefore attribute name state); //switch to the before attribute name state.
+		//Otherwise, 
+		//	treat it as per the "anything else" entry below.
 	end
 	else if ch = $002F then //U+002F SOLIDUS (/)
 	begin
 		//TODO: If the current end tag token is an appropriate end tag token,
-		//then switch to the self-closing start tag state.
-		//Otherwise, treat it as per the "anything else" entry below.
+		//	SetState(tsself-closing start tag state); //switch to the self-closing start tag state.
+		//Otherwise, 
+		//	treat it as per the "anything else" entry below.
 	end
 	else if ch = $003E then //U+003E GREATER-THAN SIGN (>)
 	begin
 		//TODO: If the current end tag token is an appropriate end tag token,
-		//then switch to the data state and emit the current tag token.
-		//Otherwise, treat it as per the "anything else" entry below.
+		//	SetState(tsdata state and emit the current tag token); //switch to the data state and emit the current tag token.
+		//Otherwise, 
+		//	treat it as per the "anything else" entry below.
 	end
 	else if ch in asciiUpperAlpha then
 	begin
@@ -1182,21 +1203,24 @@ begin
 		//U+000C FORM FEED (FF)
 		//U+0020 SPACE
 		//TODO: If the current end tag token is an appropriate end tag token,
-		//then switch to the before attribute name state.
-		//Otherwise, treat it as per the "anything else" entry below.
+		//	SetState(tsbefore attribute name state); //switch to the before attribute name state.
+		//Otherwise, 
+		//	treat it as per the "anything else" entry below.
 	end
 	else if ch = $002F then //U+002F SOLIDUS (/)
 	begin
 		//TODO: If the current end tag token is an appropriate end tag token,
-		//then switch to the self-closing start tag state.
-		//Otherwise, treat it as per the "anything else" entry below.
+		//	SetState(tsself-closing start tag state); //switch to the self-closing start tag state.
+		//Otherwise, 
+		//	treat it as per the "anything else" entry below.
 	end
 	else if ch = $003E then //U+003E GREATER-THAN SIGN (>)
 	begin
 		//TODO: If the current end tag token is an appropriate end tag token,
-		//then switch to the data state
+		//	SetState(tsdata stat); //switch to the data state
 		//and emit the current tag token.
-		//Otherwise, treat it as per the "anything else" entry below.
+		//Otherwise, 
+		//	treat it as per the "anything else" entry below.
 	end
 	else if ch in asciiUpperAlpha then
 	begin
@@ -1826,13 +1850,13 @@ begin
 		end;
 	$0026: //U+0026 AMPERSAND (&)
 		begin
-			FReturnState := tsAttributeValueDoubleQuotedState; //Set the return state to the attribute value (double-quoted) state.
+			SetReturnState(tsAttributeValueDoubleQuotedState); //Set the return state to the attribute value (double-quoted) state.
 			SetState(tsCharacterReferenceState); //Switch to the character reference state.
 		end;
 	$0000: //U+0000 NULL
 		begin
 			AddParseError('unexpected-null-character'); //This is an unexpected-null-character parse error.
-			//TODO: Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
+			AppendToCurrentAttributeValue($FFFD); //Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
 		end;
 	UEOF:
 		begin
@@ -1840,55 +1864,89 @@ begin
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
-		//TODO: Append the current input character to the current attribute's value.
+		AppendToCurrentAttributeValue(FCurrentInputCharacter); //Append the current input character to the current attribute's value.
 	end;
 end;
 
 procedure THtmlTokenizer.DoAttributeValueSingleQuotedState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.37 Attribute value (single-quoted) state
 	//https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(single-quoted)-state
-	Consume the next input character:
-
-	U+0027 APOSTROPHE (')
-	Switch to the after attribute value (quoted) state.
-	U+0026 AMPERSAND (&)
-	Set the return state to the attribute value (single-quoted) state. Switch to the character reference state.
-	U+0000 NULL
-	This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
-	EOF
-	This is an eof-in-tag parse error. Emit an end-of-file token.
-	Anything else
-	Append the current input character to the current attribute's value.
+	ch := Consume; // Consume the next input character:
+	case ch of
+	$0027: //U+0027 APOSTROPHE (')
+		begin
+			SetState(tsAfterattributeValueQuotedState); //Switch to the after attribute value (quoted) state.
+		end;
+	$0026: //U+0026 AMPERSAND (&)
+		begin
+			SetReturnState(tsAttributeValueSingleQuotedState); //Set the return state to the attribute value (single-quoted) state. 
+			SetState(tsCharacterReferenceState); //Switch to the character reference state.
+		end;
+	$0000: //U+0000 NULL
+		begin
+			AddParseError('unexpected-null-character'); //This is an unexpected-null-character parse error. 
+			AppendToCurrentAttributeValue($FFFD); //Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-tag'); //This is an eof-in-tag parse error. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AppendToCurrentAttributeValue(FCurrentInputCharacter); //Append the current input character to the current attribute's value.
+	end;
 end;
 
 procedure THtmlTokenizer.DoAttributeValueUnquotedState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.38 Attribute value (unquoted) state
 	//https://html.spec.whatwg.org/multipage/parsing.html#attribute-value-(unquoted)-state
-	Consume the next input character:
-
-	U+0009 CHARACTER TABULATION (tab)
-	U+000A LINE FEED (LF)
-	U+000C FORM FEED (FF)
-	U+0020 SPACE
-	Switch to the before attribute name state.
-	U+0026 AMPERSAND (&)
-	Set the return state to the attribute value (unquoted) state. Switch to the character reference state.
-	U+003E GREATER-THAN SIGN (>)
-	Switch to the data state. Emit the current tag token.
-	U+0000 NULL
-	This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
-	U+0022 QUOTATION MARK (")
-	U+0027 APOSTROPHE (')
-	U+003C LESS-THAN SIGN (<)
-	U+003D EQUALS SIGN (=)
-	U+0060 GRAVE ACCENT (`)
-	This is an unexpected-character-in-unquoted-attribute-value parse error. Treat it as per the "anything else" entry below.
-	EOF
-	This is an eof-in-tag parse error. Emit an end-of-file token.
-	Anything else
-	Append the current input character to the current attribute's value.
+	ch := Consume; // Consume the next input character:
+	case ch of 
+	$0009, //U+0009 CHARACTER TABULATION (tab)
+	$000A, //U+000A LINE FEED (LF)
+	$000C, //U+000C FORM FEED (FF)
+	$0020: //U+0020 SPACE
+		begin
+			SetState(tsBeforeAttributeNameState); //Switch to the before attribute name state.
+		end;
+	$0026: //U+0026 AMPERSAND (&)
+		begin
+			SetReturnState(tsAttributeValueUnquotedState); //Set the return state to the attribute value (unquoted) state. 
+			SetState(tsCharacterReferenceState); //Switch to the character reference state.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			SetSTate(tsDataState); //Switch to the data state. 
+			EmitCurrentTagToken; //Emit the current tag token.	
+		end;
+	$0000: //U+0000 NULL
+		begin
+			AddParseError('unexpected-null-character'); //This is an unexpected-null-character parse error. 
+			AppendToCurrentAttributeValue($FFFD); //Append a U+FFFD REPLACEMENT CHARACTER character to the current attribute's value.
+		end;
+	$0022, //U+0022 QUOTATION MARK (")
+	$0027, //U+0027 APOSTROPHE (')
+	$003C, //U+003C LESS-THAN SIGN (<)
+	$003D, //U+003D EQUALS SIGN (=)
+	$0060: //U+0060 GRAVE ACCENT (`)
+		begin
+			AddParseError('unexpected-character-in-unquoted-attribute-value'); //This is an unexpected-character-in-unquoted-attribute-value parse error. 
+			AppendToCurrentAttributeValue(FCurrentInputCharacter); //TODO: Treat it as per the "anything else" entry below.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-tag'); //This is an eof-in-tag parse error. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AppendToCurrentAttributeValue(FCurrentInputCharacter); //Append the current input character to the current attribute's value.
+	end;
 end;
 
 procedure THtmlTokenizer.DoAfterAttributeValueQuotedState;
@@ -1962,11 +2020,11 @@ begin
 	$003E: // U+003E GREATER-THAN SIGN (>)
 		begin
 			SetState(tsDataState); //Switch to the data state.
-			EmitCommentToken; //Emit the current comment token.
+			EmitCurrentCommentToken; //Emit the current comment token.
 		end;
 	UEOF:
 		begin
-			EmitCommentToken; //Emit the comment.
+			EmitCurrentCommentToken; //Emit the comment.
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	$0000: //U+0000 NULL
@@ -2055,151 +2113,257 @@ begin
 end;
 
 procedure THtmlTokenizer.DoCommentStartState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.43 Comment start state
    //https://html.spec.whatwg.org/multipage/parsing.html#comment-start-state
-	Consume the next input character:
-
-	U+002D HYPHEN-MINUS (-)
-	Switch to the comment start dash state.
-	U+003E GREATER-THAN SIGN (>)
-	This is an abrupt-closing-of-empty-comment parse error. Switch to the data state. Emit the current comment token.
-	Anything else
-	Reconsume in the comment state.
+	ch := Consume; // Consume the next input character:
+	case ch of
+	$002D: //U+002D HYPHEN-MINUS (-)
+		begin
+			SetState(tsCommentStartDashState); //Switch to the comment start dash state.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			AddParseError('abrupt-closing-of-empty-comment'); //This is an abrupt-closing-of-empty-comment parse error. 
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentCommentToken; //Emit the current comment token.
+		end;
+	else
+		Reconsume(tsCommentState); //Reconsume in the comment state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCommentStartDashState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.44 Comment start dash state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-start-dash-state
-	Consume the next input character:
-
-	U+002D HYPHEN-MINUS (-)
-	Switch to the comment end state.
-	U+003E GREATER-THAN SIGN (>)
-	This is an abrupt-closing-of-empty-comment parse error. Switch to the data state. Emit the current comment token.
-	EOF
-	This is an eof-in-comment parse error. Emit the current comment token. Emit an end-of-file token.
-	Anything else
-	Append a U+002D HYPHEN-MINUS character (-) to the comment token's data. Reconsume in the comment state.
+	ch := Consume; // Consume the next input character:
+	case ch of
+	$002D: //U+002D HYPHEN-MINUS (-)
+		begin
+			SetState(tsCommentEndState); //Switch to the comment end state.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			AddParseError('abrupt-closing-of-empty-comment'); //This is an abrupt-closing-of-empty-comment parse error. 
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentCommentToken; //Emit the current comment token.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-comment'); //This is an eof-in-comment parse error. 
+			EmitCurrentCommentToken; //Emit the current comment token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AppendToCurrentCommentData($002D); //Append a U+002D HYPHEN-MINUS character (-) to the comment token's data. Reconsume in the comment state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCommentState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.45 Comment state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-state
-	Consume the next input character:
-
-	U+003C LESS-THAN SIGN (<)
-	Append the current input character to the comment token's data. Switch to the comment less-than sign state.
-	U+002D HYPHEN-MINUS (-)
-	Switch to the comment end dash state.
-	U+0000 NULL
-	This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
-	EOF
-	This is an eof-in-comment parse error. Emit the current comment token. Emit an end-of-file token.
-	Anything else
-	Append the current input character to the comment token's data.
+	ch := Consume; // Consume the next input character:
+	case ch of
+	$003C: //U+003C LESS-THAN SIGN (<)
+		begin
+			AppendToCurrentCommentData(FCurrentInputCharacter); //Append the current input character to the comment token's data. 
+			SetState(tsCommentLessThanSignState); //Switch to the comment less-than sign state.
+		end;
+	$002D: //U+002D HYPHEN-MINUS (-)
+		begin
+			SetState(tsCommentEndDashState); //Switch to the comment end dash state.
+		end;
+	$0000: //U+0000 NULL
+		begin
+			AddParseError('unexpected-null-character'); //This is an unexpected-null-character parse error. 
+			AppendToCurrentCommentData($FFFD); //Append a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-comment'); //This is an eof-in-comment parse error. 
+			EmitCurrentCommentToken; //Emit the current comment token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AppendToCurrentCommentData(FCurrentInputCharacter); //Append the current input character to the comment token's data.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCommentLessThanSignState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.46 Comment less-than sign state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-state
-	Consume the next input character:
-
-	U+0021 EXCLAMATION MARK (!)
-	Append the current input character to the comment token's data. Switch to the comment less-than sign bang state.
-	U+003C LESS-THAN SIGN (<)
-	Append the current input character to the comment token's data.
-	Anything else
-	Reconsume in the comment state.
+	ch := Consume; // Consume the next input character:
+	case ch of
+	$0021: //U+0021 EXCLAMATION MARK (!)
+		begin
+			AppendToCurrentCommentData(FCurrentInputCharacter); //Append the current input character to the comment token's data. 
+			SetState(tsCommentLessThanSignBangState); //Switch to the comment less-than sign bang state.
+		end;
+	$003C: //U+003C LESS-THAN SIGN (<)
+		begin
+			AppendToCurrentCommentData(FCurrentInputCharacter); //Append the current input character to the comment token's data.
+		end;
+	else
+		Reconsume(tsCommentState); //Reconsume in the comment state.
+	end;
 end;
 
-
 procedure THtmlTokenizer.DoCommentLessThanSignBangState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.47 Comment less-than sign bang state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-state
-	Consume the next input character:
-
-	U+002D HYPHEN-MINUS (-)
-	Switch to the comment less-than sign bang dash state.
-	Anything else
-	Reconsume in the comment state.
+	ch := Consume; // Consume the next input character:
+	case ch of
+	$002D: //U+002D HYPHEN-MINUS (-)
+		begin
+			SetState(tsCommentLessThanSignBangDashState); //Switch to the comment less-than sign bang dash state.
+		end;
+	else
+		Reconsume(tsCommentState); //Reconsume in the comment state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCommentLessThanSignBangDashState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.48 Comment less-than sign bang dash state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-state
-	Consume the next input character:
-
-	U+002D HYPHEN-MINUS (-)
-	Switch to the comment less-than sign bang dash dash state.
-	Anything else
-	Reconsume in the comment end dash state.
+	ch := Consume; // Consume the next input character:
+	case ch of 
+	$002D: //U+002D HYPHEN-MINUS (-)
+		begin
+			SetState(tsCommentLessThanSignBangDashDashState); //Switch to the comment less-than sign bang dash dash state.
+		end;
+	else
+		Reconsume(tsCommentEndDashState); //Reconsume in the comment end dash state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCommentLessThanSignBangDashDashState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.49 Comment less-than sign bang dash dash state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-less-than-sign-bang-dash-dash-state
-	Consume the next input character:
-
-	U+003E GREATER-THAN SIGN (>)
-	EOF
-	Reconsume in the comment end state.
-	Anything else
-	This is a nested-comment parse error. Reconsume in the comment end state.
+	ch := Consume; // Consume the next input character:
+	case ch of 
+	$003E, //U+003E GREATER-THAN SIGN (>)
+	UEOF:
+		begin
+			Reconsume(tsCommentEndState); //Reconsume in the comment end state.
+		end;
+	else
+		AddParseError('nested-comment'); //This is a nested-comment parse error. 
+		Reconsume(tsCommentEndState); //Reconsume in the comment end state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCommentEndDashState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.50 Comment end dash state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-end-dash-state
-	Consume the next input character:
-
-	U+002D HYPHEN-MINUS (-)
-	Switch to the comment end state.
-	EOF
-	This is an eof-in-comment parse error. Emit the current comment token. Emit an end-of-file token.
-	Anything else
-	Append a U+002D HYPHEN-MINUS character (-) to the comment token's data. Reconsume in the comment state.
+	ch := Consume; // Consume the next input character:
+	case ch of
+	$002D: //U+002D HYPHEN-MINUS (-)
+		begin
+			SetState(tsCommentEndState); //Switch to the comment end state.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-comment'); //This is an eof-in-comment parse error. 
+			EmitCurrentCommentToken; //Emit the current comment token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AppendToCurrentCommentData($002D); //Append a U+002D HYPHEN-MINUS character (-) to the comment token's data. 
+		Reconsume(tsCommentState); //Reconsume in the comment state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCommentEndState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.51 Comment end state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-end-state
-	Consume the next input character:
-
-	U+003E GREATER-THAN SIGN (>)
-	Switch to the data state. Emit the current comment token.
-	U+0021 EXCLAMATION MARK (!)
-	Switch to the comment end bang state.
-	U+002D HYPHEN-MINUS (-)
-	Append a U+002D HYPHEN-MINUS character (-) to the comment token's data.
-	EOF
-	This is an eof-in-comment parse error. Emit the current comment token. Emit an end-of-file token.
-	Anything else
-	Append two U+002D HYPHEN-MINUS characters (-) to the comment token's data. Reconsume in the comment state.
+	ch := Consume; // Consume the next input character:
+	case ch of 
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentCommentToken; //Emit the current comment token.
+		end;
+	$0021: //U+0021 EXCLAMATION MARK (!)
+		begin
+			SetState(tsCommentEndBangState); //Switch to the comment end bang state.
+		end;
+	$002D: //U+002D HYPHEN-MINUS (-)
+		begin
+			AppendToCurrentCommentData($002D); //Append a U+002D HYPHEN-MINUS character (-) to the comment token's data.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-comment'); //This is an eof-in-comment parse error. 
+			EmitCurrentCommentToken; //Emit the current comment token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AppendToCurrentCommentData($002D); //Append two U+002D HYPHEN-MINUS characters (-) to the comment token's data. 
+		AppendToCurrentCommentData($002D); //(two!)
+		Reconsume(tsCommentState); //Reconsume in the comment state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCommentEndBangState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.52 Comment end bang state
 	//https://html.spec.whatwg.org/multipage/parsing.html#comment-end-bang-state
-	Consume the next input character:
-
-	U+002D HYPHEN-MINUS (-)
-	Append two U+002D HYPHEN-MINUS characters (-) and a U+0021 EXCLAMATION MARK character (!) to the comment token's data. Switch to the comment end dash state.
-	U+003E GREATER-THAN SIGN (>)
-	This is an incorrectly-closed-comment parse error. Switch to the data state. Emit the current comment token.
-	EOF
-	This is an eof-in-comment parse error. Emit the current comment token. Emit an end-of-file token.
-	Anything else
-	Append two U+002D HYPHEN-MINUS characters (-) and a U+0021 EXCLAMATION MARK character (!) to the comment token's data. Reconsume in the comment state.
+	ch := Consume; // Consume the next input character:
+	case ch of
+	$002D: //U+002D HYPHEN-MINUS (-)
+		begin
+			AppendToCurrentCommentData($002D); //Append two U+002D HYPHEN-MINUS characters (-) 
+			AppendToCurrentCommentData($002D); //(two!)
+			AppendToCurrentCommentData($0021); //and a U+0021 EXCLAMATION MARK character (!) to the comment token's data. 
+			
+			SetState(tsCommentEndDashState); //Switch to the comment end dash state.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			AddParseError('incorrectly-closed-comment'); //This is an incorrectly-closed-comment parse error. 
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentCommentToken; //Emit the current comment token.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-comment'); //This is an eof-in-comment parse error. 
+			EmitCurrentCommentToken; //Emit the current comment token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AppendToCurrentCommentData($002D); //Append two U+002D HYPHEN-MINUS characters (-) 
+		AppendToCurrentCommentData($002D); //(two!)
+		AppendToCurrentCommentData($0021); //and a U+0021 EXCLAMATION MARK character (!) to the comment token's data. 
+		Reconsume(tsCommentState); //Reconsume in the comment state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoDOCTYPEState;
@@ -2317,7 +2481,7 @@ begin
 	else if ch = $003E then //U+003E GREATER-THAN SIGN (>)
 	begin
 		SetState(tsDataState); //Switch to the data state.
-		EmitDocTypeToken; //Emit the current DOCTYPE token.
+		EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 	end
 	else if ch in asciiUpperAlpha then
 	begin
@@ -2332,7 +2496,7 @@ begin
 	begin
 		AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error.
 		(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
-		EmitDoctypeToken; //Emit the current DOCTYPE token.
+		EmitCurrentDoctypeToken; //Emit the current DOCTYPE token.
 		EmitEndOfFileToken; //Emit an end-of-file token.
 	end
 	else
@@ -2359,13 +2523,13 @@ begin
 	$003E: //U+003E GREATER-THAN SIGN (>)
 		begin
 			SetState(tsDataState); //Switch to the data state.
-			EmitDoctypeToken; //Emit the current DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	UEOF:
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error.
 			(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
-			EmitDoctypeToken; //Emit the current DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
@@ -2445,13 +2609,13 @@ begin
 			AddParseError('missing-doctype-public-identifier'); // This is a missing-doctype-public-identifier parse error. 
 			(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
 			SetState(tsDataState); //Switch to the data state. 
-			EmitDoctypeToken; //Emit the current DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	UEOF:
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
 			(FCurrentToken as TDocTypeToken).ForceQuirks := True; // Set the current DOCTYPE token's force-quirks flag to on.
-			EmitDocTypeToken; //Emit the current DOCTYPE token. 
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token. 
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
@@ -2496,13 +2660,13 @@ begin
 			AddParseError('missing-doctype-public-identifier'); //This is a missing-doctype-public-identifier parse error. 
 			(FCurrentToken as TDocTypeToken).ForceQuirks := True; // the current DOCTYPE token's force-quirks flag to on. 
 			SetState(tsDataState); //Switch to the data state. 
-			EmitDoctypeToken; //Emit the current DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	UEOF:
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
 			(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
-			EmitDoctypeToken; // Emit the current DOCTYPE token. 
+			EmitCurrentDocTypeToken; // Emit the current DOCTYPE token. 
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
@@ -2534,13 +2698,13 @@ begin
 			AddParseError('abrupt-doctype-public-identifier'); //This is an abrupt-doctype-public-identifier parse error. 
 			(FCurrentToken as TDocTypeToken).ForceQuirks := True; // Set the current DOCTYPE token's force-quirks flag to on. 
 			SetState(tsDataState); //Switch to the data state. 
-			EmitDoctypeToken; //Emit the current DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	UEOF:
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
 			(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
-			EmitDoctypeToken; //Emit the current DOCTYPE token. 
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token. 
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
@@ -2576,13 +2740,13 @@ begin
 			AddParseError('abrupt-doctype-public-identifier'); //This is an abrupt-doctype-public-identifier parse error. 
 			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
 			SetState(tsDataState); //Switch to the data state. 
-			EmitDoctypeToken; //Emit the current DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	UEOF:
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
 			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
-			EmitDoctypeToken; //Emit the current DOCTYPE token. 
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token. 
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
@@ -2614,7 +2778,7 @@ begin
 	$003E: //U+003E GREATER-THAN SIGN (>)
 		begin
 			SetState(tsDataState); //Switch to the data state. 
-			EmitDoctypeToken; //Emit the current DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	$0022: //U+0022 QUOTATION MARK (")
 		begin
@@ -2632,7 +2796,7 @@ begin
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error.
 			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
-			EmitDoctypeToken; //Emit the current DOCTYPE token. 
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token. 
 			EmitEndOfFileToken; // Emit an end-of-file token.
 		end;
 	else
@@ -2664,7 +2828,7 @@ begin
 	$003E: //U+003E GREATER-THAN SIGN (>)
 		begin
 			SetState(tsDataState); //Switch to the data state. 
-			EmitDocTypeToken; //Emit the current DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	$0022: //U+0022 QUOTATION MARK (")
 		begin
@@ -2680,7 +2844,7 @@ begin
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
 			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
-			EmitDocTypeToken; //Emit the current DOCTYPE token. 	
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token. 	
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
@@ -2691,104 +2855,227 @@ begin
 end;
 
 procedure THtmlTokenizer.DoAfterDOCTYPESystemKeywordState;
+var
+	ch: UCS4Char;
+	
+	function dt: TDocTypeToken;
+	begin
+		Result := FCurrentToken as TDocTypeToken;
+	end;
 begin
 	//13.2.5.63 After DOCTYPE system keyword state
 	//https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-system-keyword-state
-	Consume the next input character:
-
-	U+0009 CHARACTER TABULATION (tab)
-	U+000A LINE FEED (LF)
-	U+000C FORM FEED (FF)
-	U+0020 SPACE
-	Switch to the before DOCTYPE system identifier state.
-	U+0022 QUOTATION MARK (")
-	This is a missing-whitespace-after-doctype-system-keyword parse error. Set the current DOCTYPE token's system identifier to the empty string (not missing), then switch to the DOCTYPE system identifier (double-quoted) state.
-	U+0027 APOSTROPHE (')
-	This is a missing-whitespace-after-doctype-system-keyword parse error. Set the current DOCTYPE token's system identifier to the empty string (not missing), then switch to the DOCTYPE system identifier (single-quoted) state.
-	U+003E GREATER-THAN SIGN (>)
-	This is a missing-doctype-system-identifier parse error. Set the current DOCTYPE token's force-quirks flag to on. Switch to the data state. Emit the current DOCTYPE token.
-	EOF
-	This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
-	Anything else
-	This is a missing-quote-before-doctype-system-identifier parse error. Set the current DOCTYPE token's force-quirks flag to on. Reconsume in the bogus DOCTYPE state.
+	ch := Consume; //Consume the next input character:
+	case ch of
+	$0009, //U+0009 CHARACTER TABULATION (tab)
+	$000A, //U+000A LINE FEED (LF)
+	$000C, //U+000C FORM FEED (FF)
+	$0020: //U+0020 SPACE
+		begin
+			SetState(tsBeforeDOCTYPESystemIdentifierState); //Switch to the before DOCTYPE system identifier state.
+		end;
+	$0022: //U+0022 QUOTATION MARK (")
+		begin
+			AddParseError('missing-whitespace-after-doctype-system-keyword'); //This is a missing-whitespace-after-doctype-system-keyword parse error. 
+			dt.SystemIdentifier := ''; //Set the current DOCTYPE token's system identifier to the empty string (not missing), 
+			SetState(tsDOCTYPESystemIdentifierDoubleQuotedState); //switch to the DOCTYPE system identifier (double-quoted) state.
+		end;
+	$0027: //U+0027 APOSTROPHE (')
+		begin
+			AddParseError('missing-whitespace-after-doctype-system-keyword'); //This is a missing-whitespace-after-doctype-system-keyword parse error. 
+			dt.SystemIdentifier := ''; //Set the current DOCTYPE token's system identifier to the empty string (not missing), 
+			SetState(tsDOCTYPESystemIdentifierSingleQuotedState); //switch to the DOCTYPE system identifier (single-quoted) state.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			AddParseError('missing-doctype-system-identifier'); //This is a missing-doctype-system-identifier parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AddParseError('missing-quote-before-doctype-system-identifier'); //This is a missing-quote-before-doctype-system-identifier parse error. 
+		dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+		Reconsume(tsBogusDOCTYPEState); //Reconsume in the bogus DOCTYPE state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoBeforeDOCTYPESystemIdentifierState;
+var
+	ch: UCS4Char;
+
+	function dt: TDocTypeToken;
+	begin
+		Result := FCurrentToken as TDocTypeToken;
+	end;
 begin
 	//13.2.5.64 Before DOCTYPE system identifier state
 	//https://html.spec.whatwg.org/multipage/parsing.html#before-doctype-system-identifier-state
-	Consume the next input character:
-
-	U+0009 CHARACTER TABULATION (tab)
-	U+000A LINE FEED (LF)
-	U+000C FORM FEED (FF)
-	U+0020 SPACE
-	Ignore the character.
-	U+0022 QUOTATION MARK (")
-	Set the current DOCTYPE token's system identifier to the empty string (not missing), then switch to the DOCTYPE system identifier (double-quoted) state.
-	U+0027 APOSTROPHE (')
-	Set the current DOCTYPE token's system identifier to the empty string (not missing), then switch to the DOCTYPE system identifier (single-quoted) state.
-	U+003E GREATER-THAN SIGN (>)
-	This is a missing-doctype-system-identifier parse error. Set the current DOCTYPE token's force-quirks flag to on. Switch to the data state. Emit the current DOCTYPE token.
-	EOF
-	This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
-	Anything else
-	This is a missing-quote-before-doctype-system-identifier parse error. Set the current DOCTYPE token's force-quirks flag to on. Reconsume in the bogus DOCTYPE state.
+	ch := Consume; //Consume the next input character:
+	case ch of
+	$0009, //U+0009 CHARACTER TABULATION (tab)
+	$000A, //U+000A LINE FEED (LF)
+	$000C, //U+000C FORM FEED (FF)
+	$0020: //U+0020 SPACE
+		begin
+			//Ignore the character.
+		end;
+	$0022: //U+0022 QUOTATION MARK (")
+		begin
+			dt.SystemIdentifier := ''; //Set the current DOCTYPE token's system identifier to the empty string (not missing), 
+			SetState(tsDOCTYPESystemIdentifierDoubleQuotedState); //switch to the DOCTYPE system identifier (double-quoted) state.
+		end;
+	$0027: //U+0027 APOSTROPHE (')
+		begin
+			dt.SystemIdentifier := ''; //Set the current DOCTYPE token's system identifier to the empty string (not missing), 
+			SetState(tsDOCTYPESystemIdentifierSingleQuotedState); //switch to the DOCTYPE system identifier (single-quoted) state.	
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			AddParseError('missing-doctype-system-identifier'); //This is a missing-doctype-system-identifier parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token.	
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		AddParseError('missing-quote-before-doctype-system-identifier'); //This is a missing-quote-before-doctype-system-identifier parse error. 
+		dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+		Reconsume(tsBogusDOCTYPEState); //Reconsume in the bogus DOCTYPE state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoDOCTYPESystemIdentifierDoubleQuotedState;
+var
+	ch: UCS4Char;
+
+	function dt: TDocTypeToken;
+	begin
+		Result := FCurrentToken as TDocTypeToken;
+	end;
 begin
 	//13.2.5.65 DOCTYPE system identifier (double-quoted) state
 	//https://html.spec.whatwg.org/multipage/parsing.html#doctype-system-identifier-(double-quoted)-state
-	Consume the next input character:
-
-	U+0022 QUOTATION MARK (")
-	Switch to the after DOCTYPE system identifier state.
-	U+0000 NULL
-	This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current DOCTYPE token's system identifier.
-	U+003E GREATER-THAN SIGN (>)
-	This is an abrupt-doctype-system-identifier parse error. Set the current DOCTYPE token's force-quirks flag to on. Switch to the data state. Emit the current DOCTYPE token.
-	EOF
-	This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
-	Anything else
-	Append the current input character to the current DOCTYPE token's system identifier.
+	ch := Consume; //Consume the next input character:
+	case ch of
+	$0022: //U+0022 QUOTATION MARK (")
+		begin
+			SetState(tsAfterDOCTYPESystemIdentifierState); //Switch to the after DOCTYPE system identifier state.
+		end;
+	$0000: //U+0000 NULL
+		begin
+			AddParseError('unexpected-null-character'); //This is an unexpected-null-character parse error. 
+			dt.SystemIdentifier := dt.SystemIdentifier + #$FFFD; // Append a U+FFFD REPLACEMENT CHARACTER character to the current DOCTYPE token's system identifier.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			AddParseError('abrupt-doctype-system-identifier'); //This is an abrupt-doctype-system-identifier parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		//TODO: Create a UCS4 AppendSystemIdentifier(UCS4)
+		dt.SystemIdentifier := dt.SystemIdentifier + WideChar(FCurrentInputCharacter); //Append the current input character to the current DOCTYPE token's system identifier.
+	end;
 end;
 
 procedure THtmlTokenizer.DoDOCTYPESystemIdentifierSingleQuotedState;
+var
+	ch: UCS4Char;
+	function dt: TDocTypeToken;
+	begin
+		Result := FCurrentToken as TDocTypeToken;
+	end;
 begin
 	//13.2.5.66 DOCTYPE system identifier (single-quoted) state
 	//https://html.spec.whatwg.org/multipage/parsing.html#doctype-system-identifier-(single-quoted)-state
-	Consume the next input character:
-
-	U+0027 APOSTROPHE (')
-	Switch to the after DOCTYPE system identifier state.
-	U+0000 NULL
-	This is an unexpected-null-character parse error. Append a U+FFFD REPLACEMENT CHARACTER character to the current DOCTYPE token's system identifier.
-	U+003E GREATER-THAN SIGN (>)
-	This is an abrupt-doctype-system-identifier parse error. Set the current DOCTYPE token's force-quirks flag to on. Switch to the data state. Emit the current DOCTYPE token.
-	EOF
-	This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
-	Anything else
-	Append the current input character to the current DOCTYPE token's system identifier.
+	ch := Consume; //Consume the next input character:
+	case ch of
+	$0027: //U+0027 APOSTROPHE (')
+		begin
+			SetState(tsAfterDOCTYPESystemIdentifierState); //Switch to the after DOCTYPE system identifier state.
+		end;
+	$0000: //U+0000 NULL
+		begin
+			AddParseError('unexpected-null-character'); //This is an unexpected-null-character parse error. 
+			dt.AppendSystemIdentifier($FFFD); //Append a U+FFFD REPLACEMENT CHARACTER character to the current DOCTYPE token's system identifier.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			AddParseError('abrupt-doctype-system-identifier'); //This is an abrupt-doctype-system-identifier parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		dt.AppendSystemIdentifier(FCurrentInputCharacter); //Append the current input character to the current DOCTYPE token's system identifier.
+	end;
 end;
 
 procedure THtmlTokenizer.DoAfterDOCTYPESystemIdentifierState;
+var
+	ch: UCS4Char;
+	function dt: TDocTypeToken;
+	begin
+		Result := FCurrentToken as TDocTypeToken;
+	end;
 begin
 	//13.2.5.67 After DOCTYPE system identifier state
 	//https://html.spec.whatwg.org/multipage/parsing.html#after-doctype-system-identifier-state
-	Consume the next input character:
-
-	U+0009 CHARACTER TABULATION (tab)
-	U+000A LINE FEED (LF)
-	U+000C FORM FEED (FF)
-	U+0020 SPACE
-	Ignore the character.
-	U+003E GREATER-THAN SIGN (>)
-	Switch to the data state. Emit the current DOCTYPE token.
-	EOF
-	This is an eof-in-doctype parse error. Set the current DOCTYPE token's force-quirks flag to on. Emit the current DOCTYPE token. Emit an end-of-file token.
-	Anything else
-	This is an unexpected-character-after-doctype-system-identifier parse error. Reconsume in the bogus DOCTYPE state. (This does not set the current DOCTYPE token's force-quirks flag to on.)
+	ch := Consume; //Consume the next input character:
+	case ch of
+	$0009, //U+0009 CHARACTER TABULATION (tab)
+	$000A, //U+000A LINE FEED (LF)
+	$000C, //U+000C FORM FEED (FF)
+	$0020: //U+0020 SPACE
+		begin
+			//Ignore the character.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN (>)
+		begin
+			SetState(tsDataState); //Switch to the data state. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error. 
+			dt.ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on. 
+			EmitCurrentDoctypeToken; //Emit the current DOCTYPE token. 
+			EmitEndOfFileToken; //Emit an end-of-file token.	
+		end;
+	else
+		AddParseError('unexpected-character-after-doctype-system-identifier'); //This is an unexpected-character-after-doctype-system-identifier parse error. 
+		Reconsume(tsBogusDOCTYPEState); //Reconsume in the bogus DOCTYPE state. 	
+		//(This does not set the current DOCTYPE token's force-quirks flag to on.)
+	end;
 end;
 
 procedure THtmlTokenizer.DoBogusDOCTYPEState;
@@ -2802,7 +3089,7 @@ begin
 	$003E: //U+003E GREATER-THAN SIGN (>)
 		begin
 			SetState(tsDataState); //Switch to the data state.
-			EmitDoctypeToken; //Emit the DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the DOCTYPE token.
 		end;
 	$0000: //U+0000 NULL
 		begin
@@ -2811,7 +3098,7 @@ begin
 		end;
 	UEOF:
 		begin
-			EmitDoctypeToken; //Emit the DOCTYPE token.
+			EmitCurrentDocTypeToken; //Emit the DOCTYPE token.
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
@@ -2820,43 +3107,66 @@ begin
 end;
 
 procedure THtmlTokenizer.DoCDATASectionState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.69 CDATA section state
 	//https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-state
-	Consume the next input character:
-
-	U+005D RIGHT SQUARE BRACKET (])
-	Switch to the CDATA section bracket state.
-	EOF
-	This is an eof-in-cdata parse error. Emit an end-of-file token.
-	Anything else
-	Emit the current input character as a character token.
+	ch := Consume; //Consume the next input character:
+	case ch of
+	$005D: //U+005D RIGHT SQUARE BRACKET (])
+		begin
+			SetState(tsCDATASectionBracketState); //Switch to the CDATA section bracket state.
+		end;
+	UEOF:
+		begin
+			AddParseError('eof-in-cdata'); //This is an eof-in-cdata parse error. 
+			EmitEndOfFileToken; //Emit an end-of-file token.
+		end;
+	else
+		EmitCharacter(FCurrentInputCharacter); //Emit the current input character as a character token.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCDATASectionBracketState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.70 CDATA section bracket state
 	//https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-bracket-state
-	Consume the next input character:
-
-	U+005D RIGHT SQUARE BRACKET (])
-	Switch to the CDATA section end state.
-	Anything else
-	Emit a U+005D RIGHT SQUARE BRACKET character token. Reconsume in the CDATA section state.
+	ch := Consume; //Consume the next input character:
+	case ch of 
+	$005D: //U+005D RIGHT SQUARE BRACKET (])
+		begin
+			SetState(tsCDATASectionEndState); //Switch to the CDATA section end state.
+		end;
+	else
+		EmitCharacter($005D); //Emit a U+005D RIGHT SQUARE BRACKET character token.
+		Reconsume(tsCDATASectionState); //Reconsume in the CDATA section state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCDATASectionEndState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.71 CDATA section end state
 	//https://html.spec.whatwg.org/multipage/parsing.html#cdata-section-end-state
-	Consume the next input character:
-
-	U+005D RIGHT SQUARE BRACKET (])
-	Emit a U+005D RIGHT SQUARE BRACKET character token.
-	U+003E GREATER-THAN SIGN character
-	Switch to the data state.
-	Anything else
-	Emit two U+005D RIGHT SQUARE BRACKET character tokens. Reconsume in the CDATA section state.
+	ch := Consume; //Consume the next input character:
+	case ch of
+	$005D: //U+005D RIGHT SQUARE BRACKET (])
+		begin
+			EmitCharacter($005D); //Emit a U+005D RIGHT SQUARE BRACKET character token.
+		end;
+	$003E: //U+003E GREATER-THAN SIGN character
+		begin
+			SetState(tsDataState); //Switch to the data state.
+		end;
+	else
+		EmitCharacter($005D); //Emit two U+005D RIGHT SQUARE BRACKET character tokens. 
+		EmitCharacter($005D); //(two!)
+		Reconsume(tsCDataSEctionState); //Reconsume in the CDATA section state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoCharacterReferenceState;
@@ -2884,7 +3194,7 @@ begin
 	begin
 		//Flush code points consumed as a character reference.
 		FlushCodePointsConsumed;
-		Reconsume(FReturnState); //Reconsume in the return state.
+		Reconsume(FReturnState2); //Reconsume in the return state.
 	end;
 end;
 
@@ -2936,94 +3246,189 @@ begin
 end;
 
 procedure THtmlTokenizer.DoAmbiguousAmpersandState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.74 Ambiguous ampersand state
 	//https://html.spec.whatwg.org/multipage/parsing.html#ambiguous-ampersand-state
-	Consume the next input character:
-
-	ASCII alphanumeric
-	If the character reference was consumed as part of an attribute, then append the current input character to the current attribute's value. Otherwise, emit the current input character as a character token.
-	U+003B SEMICOLON (;)
-	This is an unknown-named-character-reference parse error. Reconsume in the return state.
-	Anything else
-	Reconsume in the return state.
+	ch := Consume; //Consume the next input character:
+	if ch in asciiAlphanumeric then
+	begin
+		//todo: If the character reference was consumed as part of an attribute, then 
+		//todo: 	append the current input character to the current attribute's value. 
+		//todo: Otherwise, 
+		//todo: emit the current input character as a character token.
+	end
+	else if ch = $003B then //U+003B SEMICOLON (;)
+	begin
+		AddParseError('unknown-named-character-reference'); //This is an unknown-named-character-reference parse error. 
+		Reconsume(FReturnState2); //Reconsume in the return state.
+	end
+	else
+		Reconsume(FReturnState2); //Reconsume in the return state.
 end;
 
 procedure THtmlTokenizer.DoNumericCharacterReferenceState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.75 Numeric character reference state
 	//https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-state
-	Set the character reference code to zero (0).
-
-	Consume the next input character:
-
-	U+0078 LATIN SMALL LETTER X
-	U+0058 LATIN CAPITAL LETTER X
-	Append the current input character to the temporary buffer. Switch to the hexadecimal character reference start state.
-	Anything else
-	Reconsume in the decimal character reference start state.
+	FCharacterReferenceCode := 0; //Set the character reference code to zero (0).
+	ch := Consume; //Consume the next input character:
+	case ch of
+	$0078, //U+0078 LATIN SMALL LETTER X
+	$0058: //U+0058 LATIN CAPITAL LETTER X
+		begin
+			AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
+			SetState(tsHexadecimalCharacterReferenceStartState); //Switch to the hexadecimal character reference start state.
+		end;
+	else
+		Reconsume(tsDecimalCharacterReferenceStartState); //Reconsume in the decimal character reference start state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoHexadecimalCharacterReferenceStartState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.76 Hexadecimal character reference start state
 	//https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-start-state
-	Consume the next input character:
-
-	ASCII hex digit
-	Reconsume in the hexadecimal character reference state.
-	Anything else
-	This is an absence-of-digits-in-numeric-character-reference parse error. Flush code points consumed as a character reference. Reconsume in the return state.
+	ch := Consume; //Consume the next input character:
+	if ch in asciiHexDigit then
+	begin
+		Reconsume(tsHexadecimalCharacterReferenceState); //Reconsume in the hexadecimal character reference state.
+	end
+	else
+	begin
+		AddParseError('absence-of-digits-in-numeric-character-reference'); //This is an absence-of-digits-in-numeric-character-reference parse error. 
+		FlushCodePointsConsumed; //Flush code points consumed as a character reference. 
+		Reconsume(FReturnState2); //Reconsume in the return state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoDecimalCharacterReferenceStartState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.77 Decimal character reference start state
 	//https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-start-state
-	Consume the next input character:
-
-	ASCII digit
-	Reconsume in the decimal character reference state.
-	Anything else
-	This is an absence-of-digits-in-numeric-character-reference parse error. Flush code points consumed as a character reference. Reconsume in the return state.
+	ch := Consume; //Consume the next input character:
+	if ch in asciiDigit then
+	begin
+		Reconsume(tsDecimalCharacterReferenceState); //Reconsume in the decimal character reference state.
+	end
+	else
+	begin
+		AddParseError('absence-of-digits-in-numeric-character-reference'); //This is an absence-of-digits-in-numeric-character-reference parse error. 
+		FlushCodePointsConsumed; //Flush code points consumed as a character reference. 
+		Reconsume(FReturnState2); //Reconsume in the return state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoHexadecimalCharacterReferenceState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.78 Hexadecimal character reference state
 	//https://html.spec.whatwg.org/multipage/parsing.html#hexadecimal-character-reference-state
-	Consume the next input character:
-
-	ASCII digit
-	Multiply the character reference code by 16. Add a numeric version of the current input character (subtract 0x0030 from the character's code point) to the character reference code.
-	ASCII upper hex digit
-	Multiply the character reference code by 16. Add a numeric version of the current input character as a hexadecimal digit (subtract 0x0037 from the character's code point) to the character reference code.
-	ASCII lower hex digit
-	Multiply the character reference code by 16. Add a numeric version of the current input character as a hexadecimal digit (subtract 0x0057 from the character's code point) to the character reference code.
-	U+003B SEMICOLON
-	Switch to the numeric character reference end state.
-	Anything else
-	This is a missing-semicolon-after-character-reference parse error. Reconsume in the numeric character reference end state.
+	ch := Consume; //Consume the next input character:
+	if ch in asciiDigit then
+	begin
+		FCharacterReferenceCode := FCharacterReferenceCode * 16; //Multiply the character reference code by 16. 
+		FCharacterReferenceCode := FCharacterReferenceCode + (ch - $0030); //Add a numeric version of the current input character (subtract 0x0030 from the character's code point) to the character reference code.
+	end
+	else if ch in asciiUpperHexDigit then
+	begin
+		FCharacterReferenceCode := FCharacterReferenceCode * 16; //Multiply the character reference code by 16. 
+		FCharacterReferenceCode := FCharacterReferenceCode + (ch - $0037); //Add a numeric version of the current input character as a hexadecimal digit (subtract 0x0037 from the character's code point) to the character reference code.
+	end
+	else if ch in asciiLowerHexDigit then
+	begin
+		FCharacterReferenceCode := FCharacterReferenceCode * 16; //Multiply the character reference code by 16. 
+		FCharacterReferenceCode := FCharacterReferenceCode + (ch - $0057); //Add a numeric version of the current input character as a hexadecimal digit (subtract 0x0057 from the character's code point) to the character reference code.
+	end
+	else if ch = $003B then //U+003B SEMICOLON
+	begin
+		SetState(tsNumericCharacterReferenceEndState); //Switch to the numeric character reference end state.
+	end
+	else
+	begin
+		AddParseError('missing-semicolon-after-character-reference'); //This is a missing-semicolon-after-character-reference parse error.
+		Reconsume(tsNumericCharacterReferenceEndState); //Reconsume in the numeric character reference end state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoDecimalCharacterReferenceState;
+var
+	ch: UCS4Char;
 begin
 	//13.2.5.79 Decimal character reference state
 	//https://html.spec.whatwg.org/multipage/parsing.html#decimal-character-reference-state
-	Consume the next input character:
-
-	ASCII digit
-	Multiply the character reference code by 10. Add a numeric version of the current input character (subtract 0x0030 from the character's code point) to the character reference code.
-	U+003B SEMICOLON
-	Switch to the numeric character reference end state.
-	Anything else
-	This is a missing-semicolon-after-character-reference parse error. Reconsume in the numeric character reference end state.
+	ch := Consume; //Consume the next input character:
+	if ch in asciiDigit then
+	begin
+		FCharacterReferenceCode := FCharacterReferenceCode * 10; //Multiply the character reference code by 10. 
+		FCharacterReferenceCode := FCharacterReferenceCode + (ch - $0030); //Add a numeric version of the current input character (subtract 0x0030 from the character's code point) to the character reference code.
+	end
+	else if ch = $003B then // U+003B SEMICOLON
+	begin
+		SetState(tsNumericCharacterReferenceEndState); //Switch to the numeric character reference end state.
+	end
+	else
+	begin
+		AddParseError('missing-semicolon-after-character-reference'); //This is a missing-semicolon-after-character-reference parse error. 
+		Reconsume(tsNumericCharacterReferenceEndState); //Reconsume in the numeric character reference end state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoNumericCharacterReferenceEndState;
 begin
 	//13.2.5.80 Numeric character reference end state
 	//https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-end-state
+(*
+Check the character reference code:
+
+If the number is 0x00, then this is a null-character-reference parse error. Set the character reference code to 0xFFFD.
+
+If the number is greater than 0x10FFFF, then this is a character-reference-outside-unicode-range parse error. Set the character reference code to 0xFFFD.
+
+If the number is a surrogate, then this is a surrogate-character-reference parse error. Set the character reference code to 0xFFFD.
+
+If the number is a noncharacter, then this is a noncharacter-character-reference parse error.
+
+If the number is 0x0D, or a control that's not ASCII whitespace, then this is a control-character-reference parse error. If the number is one of the numbers in the first column of the following table, then find the row with that number in the first column, and set the character reference code to the number in the second column of that row.
+
+Number	Code point
+0x80	0x20AC	EURO SIGN (€)
+0x82	0x201A	SINGLE LOW-9 QUOTATION MARK (‚)
+0x83	0x0192	LATIN SMALL LETTER F WITH HOOK (ƒ)
+0x84	0x201E	DOUBLE LOW-9 QUOTATION MARK („)
+0x85	0x2026	HORIZONTAL ELLIPSIS (…)
+0x86	0x2020	DAGGER (†)
+0x87	0x2021	DOUBLE DAGGER (‡)
+0x88	0x02C6	MODIFIER LETTER CIRCUMFLEX ACCENT (ˆ)
+0x89	0x2030	PER MILLE SIGN (‰)
+0x8A	0x0160	LATIN CAPITAL LETTER S WITH CARON (Š)
+0x8B	0x2039	SINGLE LEFT-POINTING ANGLE QUOTATION MARK (‹)
+0x8C	0x0152	LATIN CAPITAL LIGATURE OE (Œ)
+0x8E	0x017D	LATIN CAPITAL LETTER Z WITH CARON (Ž)
+0x91	0x2018	LEFT SINGLE QUOTATION MARK (‘)
+0x92	0x2019	RIGHT SINGLE QUOTATION MARK (’)
+0x93	0x201C	LEFT DOUBLE QUOTATION MARK (“)
+0x94	0x201D	RIGHT DOUBLE QUOTATION MARK (”)
+0x95	0x2022	BULLET (•)
+0x96	0x2013	EN DASH (–)
+0x97	0x2014	EM DASH (—)
+0x98	0x02DC	SMALL TILDE (˜)
+0x99	0x2122	TRADE MARK SIGN (™)
+0x9A	0x0161	LATIN SMALL LETTER S WITH CARON (š)
+0x9B	0x203A	SINGLE RIGHT-POINTING ANGLE QUOTATION MARK (›)
+0x9C	0x0153	LATIN SMALL LIGATURE OE (œ)
+0x9E	0x017E	LATIN SMALL LETTER Z WITH CARON (ž)
+0x9F	0x0178	LATIN CAPITAL LETTER Y WITH DIAERESIS (Ÿ)
+Set the temporary buffer to the empty string. Append a code point equal to the character reference code to the temporary buffer. Flush code points consumed as a character reference. Switch to the return state.
+*)
 	AddNotImplementedParseError('NumericCharacterReferenceEndState');
 end;
 
@@ -3038,7 +3443,7 @@ begin
 	EmitToken(token);
 end;
 
-procedure THtmlTokenizer.EmitCommentToken;
+procedure THtmlTokenizer.EmitCurrentCommentToken;
 begin
 	//Emit the current token - which is assumed to be a Comment token.
 	EmitToken(FCurrentToken as TCommentToken);
@@ -3055,7 +3460,7 @@ begin
 	EmitToken(FCurrentToken);
 end;
 
-procedure THtmlTokenizer.EmitDoctypeToken;
+procedure THtmlTokenizer.EmitCurrentDocTypeToken;
 begin
 	//Emit the current token - which is assumed to be a DOCTYPE token.
 	EmitToken(FCurrentToken as TDocTypeToken);
@@ -3344,6 +3749,13 @@ begin
 	FState2 := State;
 
 	LogFmt('    ==> %s', [TypInfo.GetEnumName(TypeInfo(TTokenizerState), Ord(State))]);
+end;
+
+procedure THtmlTokenizer.SetReturnState(const State: TTokenizerState);
+begin
+	FReturnState2 := State;
+
+	LogFmt('    ReturnState ==> %s', [TypInfo.GetEnumName(TypeInfo(TTokenizerState), Ord(State))]);
 end;
 
 { TCharacterReader }
@@ -3673,6 +4085,11 @@ begin
 		raise Exception.CreateFmt('Attempt to add extended character (%d) to DOCTYPE token', [ch]);
 
 	Name := Name + WideChar(ch);
+end;
+
+procedure TDocTypeToken.AppendSystemIdentifier(const ch: UCS4Char);
+begin
+
 end;
 
 constructor TDocTypeToken.Create;
