@@ -384,6 +384,7 @@ type
 		//FDocType: TDocumentType; is now a child of the document node as the DOM intended
 		FNamespaceURIList: TNamespaceURIList;
 		FSearchNodeLists: TList;
+		FQuirksMode: Boolean;
 		function GetDocumentElement: TElement;
 		function GetDocType: TDocumentType;
 		function GetHead: TElement;
@@ -418,6 +419,8 @@ type
 		property NamespaceURIList: TNamespaceURIList read FNamespaceURIList;
 		property DocumentElement: TElement read GetDocumentElement;
 
+		property QuirksMode: Boolean read FQuirksMode write FQuirksMode;
+
 		// DOM Tree Accessors - https://html.spec.whatwg.org/#dom-tree-accessors
 		property Head: TElement read GetHead; //Returns the head element.
 		property Body: TElement read GetBody;	//Returns the body element.
@@ -442,7 +445,7 @@ type
 implementation
 
 uses
-	Entities;
+	Entities, System.UITypes, System.Types;
 
 const
 	ExceptionMsg: array[INDEX_SIZE_ERR..TYPE_MISMATCH_ERR] of string = (
