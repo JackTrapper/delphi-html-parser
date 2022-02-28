@@ -72,7 +72,7 @@ type
 		procedure ProcessTextNode(Sender: TObject);
 		procedure ProcessComment(Sender: TObject);
 		//procedure ProcessEntityReference(Sender: TObject); removed in HTML5
-		procedure ProcessCDataSection(Sender: TObject);
+		//procedure ProcessCDataSection(Sender: TObject);
 	protected
 		function ParseString(const htmlStr: TDomString): TDocument;
 		property HtmlDocument: TDocument read FHtmlDocument;
@@ -265,8 +265,8 @@ begin
 end;
 
 procedure THtml4Parser.LogFmt(const Fmt: string; const Args: array of const);
-var
-	s: string;
+//var
+//	s: string;
 begin
 	if IsDebuggerPresent then
 	begin
@@ -308,7 +308,7 @@ begin
 	parent.NodeValue := FHtmlReader.nodeValue;
 end;
 
-procedure THtml4Parser.ProcessCDataSection(Sender: TObject);
+(*procedure THtml4Parser.ProcessCDataSection(Sender: TObject);
 var
 	CDataSection: TCDataSection;
 begin
@@ -316,7 +316,7 @@ begin
 
 	CDataSection := FHtmlDocument.createCDATASection(FHtmlReader.nodeValue);
 	FCurrentNode.AppendChild(CDataSection)
-end;
+end;*)
 
 procedure THtml4Parser.ProcessComment(Sender: TObject);
 var
@@ -457,7 +457,7 @@ begin
 
 	s := FHtmlReader.NodeValue;
 
-	parent := nil;
+	//parent := nil;
 
 	if FHtmlDocument.Body <> nil then
 	begin
@@ -515,7 +515,7 @@ begin
 	body := FHtmlDocument.Body;
 	if body = nil then
 	begin
-		html := RequireHtmlElement;
+		//html := RequireHtmlElement;
 		RequireHeadElement;
 		body := FHtmlDocument.DocumentElement.AppendChild(FHtmlDocument.createElement(bodyTagName)) as TElement;
 		FCurrentNode := body;
