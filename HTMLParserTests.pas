@@ -202,7 +202,6 @@ procedure THtmlParserTests.TestParseString_DocTypes;
 
 	procedure t(const DocType, ExpectedName, ExpectedPublicID, ExpectedSystemID: TDomString);
 	var
-		actualName, actualPublicID, actualSystemID: TDomString;
 		doc: TDocument;
 	begin
 		doc := THtmlParser.Parse(DocType+'<HTML/>');
@@ -280,7 +279,6 @@ procedure THtmlParserTests.TestParseString_DocTypes_LegacyAppCompat;
 
 	procedure t(const DocType, ExpectedName, ExpectedPublicID, ExpectedSystemID: TDomString);
 	var
-		actualName, actualPublicID, actualSystemID: TDomString;
 		doc: TDocument;
 	begin
 		doc := THtmlParser.Parse(DocType+'<HTML/>');
@@ -562,7 +560,6 @@ procedure THtmlFormatterTests.TestAmpersandNotAlwaysEscaped;
 var
 	szHtml: string;
 	doc: TDocument;
-	szHtmlAfter: string;
 const
 	ExpectedHTML =
 		'<html>'+#13#10+
