@@ -501,7 +501,7 @@ type
 		constructor Create(AOwnerNode: TNode; const namespaceURI, name: TDomString);
 		destructor Destroy; override;
 		procedure Invalidate;
-		function item(index: Integer): TNode; override;
+		function Item(index: Integer): TNode; override;
 	end;
 {
 function Concat(const S1, S2: TDomString): TDomString;

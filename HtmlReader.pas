@@ -417,8 +417,8 @@ begin
 end;
 
 procedure THtmlReader.LogBack(Callback: TStringGenerator);
-var
-	s: UnicodeString;
+//var
+//	s: UnicodeString;
 begin
 	if IsDebuggerPresent then
 	begin
@@ -428,8 +428,8 @@ begin
 end;
 
 procedure THtmlReader.LogFmt(const fmt: string; const Args: array of const);
-var
-	s: string;
+//var
+//	s: string;
 begin
 	if True then
 	begin
