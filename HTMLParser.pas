@@ -446,6 +446,8 @@ type
 	THtmlParser = class
 	private
 		FHtmlDocument: TDocument;
+
+		{ State }
 		FTokenizer: THtmlTokenizer;
 		procedure Log(const s: string);
 	private
@@ -464,7 +466,7 @@ type
 		procedure SetInsertionMode(const Mode: TInsertionMode); // used to handle mis-nested formatting element tags.
 		function CreateElementForToken(const Node: THtmlToken): TElement;
 		procedure InsertComment(const CommentData: UnicodeString; Parent: TNode);
-
+		procedure AddNotImplementedParseError(const InsertionModeHandlerName: string);
 
 		procedure ProcessNodeAccordingToInsertionMode(const Node: THtmlToken);
 
@@ -490,7 +492,7 @@ type
 		procedure DoInFramesetInsertionMode(Node: THtmlToken);			//13.2.6.4.20 The "in frameset" insertion mode
 		procedure DoAfterFramesetInsertionMode(Node: THtmlToken);		//13.2.6.4.21 The "after frameset" insertion mode
 		procedure DoAfterAfterBodyInsertionMode(Node: THtmlToken);		//13.2.6.4.22 The "after after body" insertion mode
-		procedure DoAfterAfterFrameseInsertionMode(Node: THtmlToken);	//13.2.6.4.23 The "after after frameset" insertion mode
+		procedure DoAfterAfterFrameseInsertionMode(Node: THtmlToken);  //13.2.6.4.23 The "after after frameset" insertion mode
 	protected
 		function ParseString(const htmlStr: TDomString): TDocument;
 
@@ -505,6 +507,7 @@ type
 		property Document: TDocument read FHtmlDocument;
 	public
 		constructor Create;
+		destructor Destroy; override;
 
 		class function Parse(const HtmlStr: TDomString): TDocument;
 
@@ -4025,6 +4028,7 @@ begin
 	FInsertionMode := imInitial; //Initially, the insertion mode is "initial".
 	FOriginalInsertionMode := imInitial;
 	FActiveFormattingElements := TElementStack.Create;
+	FOpenElements := TElementStack.Create;
 
 	FHead := nil;
 	FForm := nil;
@@ -4253,10 +4257,17 @@ begin
 	end;
 end;
 
+procedure THtmlParser.AddNotImplementedParseError(const InsertionModeHandlerName: string);
+begin
+	AddParseError('not-implemented-'+InsertionModeHandlerName);
+	raise ENotImplemented.Create(InsertionModeHandlerName);
+end;
+
 procedure THtmlParser.DoBeforeHeadInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.3 The "before head" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#the-before-head-insertion-mode
+	AddNotImplementedParseError('DoBeforeHeadInsertionMode');
 {
 When the user agent is to apply the rules for the "before head" insertion mode, the user agent must handle the token as follows:
 
@@ -4300,6 +4311,7 @@ procedure THtmlParser.DoInHeadInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.4 The "in head" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhead
+	AddNotImplementedParseError('DoInHeadInsertionMode');
 {
 When the user agent is to apply the rules for the "in head" insertion mode, the user agent must handle the token as follows:
 
@@ -4422,6 +4434,7 @@ procedure THtmlParser.DoInHeadNoscriptInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.5 The "in head noscript" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inheadnoscript
+	AddNotImplementedParseError('DoInHeadNoscriptInsertionMode');
 {
 When the user agent is to apply the rules for the "in head noscript" insertion mode, the user agent must handle the token as follows:
 
@@ -4463,6 +4476,7 @@ procedure THtmlParser.DoAfterHeadInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.6 The "after head" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#the-after-head-insertion-mode
+	AddNotImplementedParseError('DoAfterHeadInsertionMode');
 {
 When the user agent is to apply the rules for the "after head" insertion mode, the user agent must handle the token as follows:
 
@@ -4532,6 +4546,7 @@ procedure THtmlParser.DoInBodyInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.7 The "in body" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inbody
+	AddNotImplementedParseError('DoInBodyInsertionMode');
 {
 When the user agent is to apply the rules for the "in body" insertion mode, the user agent must handle the token as follows:
 
@@ -5095,6 +5110,7 @@ procedure THtmlParser.DoTextInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.8 The "text" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incdata
+	AddNotImplementedParseError('DoTextInsertionMode');
 {
 When the user agent is to apply the rules for the "text" insertion mode, the user agent must handle the token as follows:
 
@@ -5180,6 +5196,7 @@ procedure THtmlParser.DoInTableInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.9 The "in table" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intable
+	AddNotImplementedParseError('DoInTableInsertionMode');
 {
 When the user agent is to apply the rules for the "in table" insertion mode, the user agent must handle the token as follows:
 
@@ -5298,6 +5315,7 @@ procedure THtmlParser.DoInTableTextInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.10 The "in table text" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intabletext
+	AddNotImplementedParseError('DoInTableTextInsertionMode');
 {
 When the user agent is to apply the rules for the "in table text" insertion mode, the user agent must handle the token as follows:
 
@@ -5320,6 +5338,7 @@ procedure THtmlParser.DoInCaptionInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.11 The "in caption" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incaption
+	AddNotImplementedParseError('DoInCaptionInsertionMode');
 {
 When the user agent is to apply the rules for the "in caption" insertion mode, the user agent must handle the token as follows:
 
@@ -5368,6 +5387,7 @@ procedure THtmlParser.DoInColumnGroupInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.12 The "in column group" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-incolgroup
+	AddNotImplementedParseError('DoInColumnGroupInsertionMode');
 {
 When the user agent is to apply the rules for the "in column group" insertion mode, the user agent must handle the token as follows:
 
@@ -5418,6 +5438,7 @@ procedure THtmlParser.DoInTableBodyInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.13 The "in table body" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intbody
+	AddNotImplementedParseError('DoInTableBodyInsertionMode');
 {
 When the user agent is to apply the rules for the "in table body" insertion mode, the user agent must handle the token as follows:
 
@@ -5472,6 +5493,7 @@ procedure THtmlParser.DoInRowInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.14 The "in row" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intr
+	AddNotImplementedParseError('DoInRowInsertionMode');
 {
 When the user agent is to apply the rules for the "in row" insertion mode, the user agent must handle the token as follows:
 
@@ -5532,6 +5554,7 @@ procedure THtmlParser.DoInCellInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.15 The "in cell" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intd
+	AddNotImplementedParseError('DoInCellInsertionMode');
 {
 When the user agent is to apply the rules for the "in cell" insertion mode, the user agent must handle the token as follows:
 
@@ -5586,6 +5609,7 @@ procedure THtmlParser.DoInSelectInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.16 The "in select" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inselect
+	AddNotImplementedParseError('DoInSelectInsertionMode');
 {
 When the user agent is to apply the rules for the "in select" insertion mode, the user agent must handle the token as follows:
 
@@ -5675,6 +5699,7 @@ procedure THtmlParser.DoInSelectInTableInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.17 The "in select in table" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inselectintable
+	AddNotImplementedParseError('DoInSelectInTableInsertionMode');
 {
 When the user agent is to apply the rules for the "in select in table" insertion mode, the user agent must handle the token as follows:
 
@@ -5709,6 +5734,7 @@ procedure THtmlParser.DoInTemplateInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.18 The "in template" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-intemplate
+	AddNotImplementedParseError('DoInTemplateInsertionMode');
 {
 When the user agent is to apply the rules for the "in template" insertion mode, the user agent must handle the token as follows:
 
@@ -5780,6 +5806,7 @@ procedure THtmlParser.DoAfterBodyInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.19 The "after body" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-afterbody
+	AddNotImplementedParseError('DoAfterBodyInsertionMode');
 {
 When the user agent is to apply the rules for the "after body" insertion mode, the user agent must handle the token as follows:
 
@@ -5812,6 +5839,7 @@ procedure THtmlParser.DoInFramesetInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.20 The "in frameset" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inframeset
+	AddNotImplementedParseError('DoInFramesetInsertionMode');
 {
 When the user agent is to apply the rules for the "in frameset" insertion mode, the user agent must handle the token as follows:
 
@@ -5861,6 +5889,7 @@ procedure THtmlParser.DoAfterFramesetInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.21 The "after frameset" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-afterframeset
+	AddNotImplementedParseError('DoAfterFramesetInsertionMode');
 {
 When the user agent is to apply the rules for the "after frameset" insertion mode, the user agent must handle the token as follows:
 
@@ -5890,10 +5919,19 @@ Parse error. Ignore the token.
 }
 end;
 
+destructor THtmlParser.Destroy;
+begin
+	FreeAndNil(FOpenElements);
+	FreeAndNil(FActiveFormattingElements);
+
+	inherited;
+end;
+
 procedure THtmlParser.DoAfterAfterBodyInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.22 The "after after body" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-body-insertion-mode
+	AddNotImplementedParseError('DoAfterAfterBodyInsertionMode');
 {
 When the user agent is to apply the rules for the "after after body" insertion mode, the user agent must handle the token as follows:
 
@@ -5917,6 +5955,7 @@ procedure THtmlParser.DoAfterAfterFrameseInsertionMode(Node: THtmlToken);
 begin
 	//13.2.6.4.23 The "after after frameset" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#the-after-after-frameset-insertion-mode
+	AddNotImplementedParseError('DoAfterAfterFrameseInsertionMode');
 {
 When the user agent is to apply the rules for the "after after frameset" insertion mode, the user agent must handle the token as follows:
 
