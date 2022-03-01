@@ -174,6 +174,7 @@ type
 		constructor Create;
 		function TopMost: TElement;
 		function BottomMost: TElement;
+		procedure Pop;
 		property Items[Index: Integer]: TElement read GetItems;
 		property IsEmpty: Boolean read GetIsEmpty;
 	end;
@@ -253,6 +254,7 @@ type
 	TStartTagToken = class(TTagToken)
 	public
 		constructor Create;
+		procedure AcknowledgeSelfClosing;
 	end;
 
 	TEndTagToken = class(TTagToken)
@@ -461,14 +463,21 @@ type
 		FScripting: Boolean;
 		FFramesetOK: Boolean;
 
-		procedure AddParseError(const s: UnicodeString);
+		procedure AddParseError(const s: UnicodeString); overload;
+		procedure AddParseError(const Token: THtmlToken); overload;
 		procedure ResetTheInsertionModeAppropriately;
 		procedure SetInsertionMode(const Mode: TInsertionMode); // used to handle mis-nested formatting element tags.
 		function CreateElementForToken(const Node: THtmlToken): TElement;
-		procedure InsertComment(const CommentData: UnicodeString; Parent: TNode);
-		procedure AddNotImplementedParseError(const InsertionModeHandlerName: string);
+		procedure InsertComment(const Token: THtmlToken; Parent: TNode=nil);
+		procedure InsertCharacter(const Token: THtmlToken; Parent: TNode=nil);
+		procedure InsertAnHtmlElement(const Token: THtmlToken; Parent: TNode=nil);
 
-		procedure ProcessNodeAccordingToInsertionMode(const Node: THtmlToken);
+		procedure GenericParsingAlgorithm(const Token: THtmlToken; NextTokenizerState: TTokenizerState);
+
+		procedure AddNotImplementedParseError(const InsertionModeHandlerName: string);
+		function TextIs(const Left: UnicodeString; const Right: array of UnicodeString): Boolean;
+
+		procedure ProcessNodeAccordingToInsertionMode(const Node: THtmlToken; InsertionMode: TInsertionMode);
 
 		procedure DoInitialInsertionMode(Node: THtmlToken); 				//13.2.6.4.1 The "initial" insertion mode
 		procedure DoBeforeHtmlInsertionMode(Node: THtmlToken);			//13.2.6.4.2 The "before html" insertion mode
@@ -4021,6 +4030,14 @@ begin
 	//todo: add a parse error somewhere. And add parse errors from the tokenizer too
 end;
 
+procedure THtmlParser.AddParseError(const Token: THtmlToken);
+begin
+{
+	The error you're having is that this Token type is not allowed in the current insertion mode
+}
+	AddParseError(Token.ClassName+' not allowed in insertion mode ""');
+end;
+
 constructor THtmlParser.Create;
 begin
 	inherited Create;
@@ -4111,7 +4128,8 @@ begin
 	end
 	else if (node is TCommentToken) then
 	begin
-		InsertComment((node as TCommentToken).DataString, Document);
+		//Insert a comment as the last child of the Document object.
+		InsertComment(node, Document);
 	end
 	else if (node is TDocTypeToken) then
 	begin
@@ -4225,7 +4243,7 @@ begin
 	}
 
 		SetInsertionMode(imBeforeHtml); //In any case, switch the insertion mode to "before html",
-		ProcessNodeAccordingToInsertionMode(node); //then reprocess the token.
+		ProcessNodeAccordingToInsertionMode(node, FInsertionMode); //then reprocess the token.
 	end;
 end;
 
@@ -4241,7 +4259,8 @@ begin
 	end
 	else if Node is TCommentToken then
 	begin
-		InsertComment((Node as TCommentToken).DataString, Document);
+		//Insert a comment as the last child of the Document object.
+		InsertComment(Node, Document);
 	end
 	else if (Node is TCharacterToken) and ((Node as TCharacterToken).Data in [$0009, $000A, $000C, $000D, $0020]) then
 	begin
@@ -4308,57 +4327,58 @@ Reprocess the current token.
 end;
 
 procedure THtmlParser.DoInHeadInsertionMode(Node: THtmlToken);
-begin
-	//13.2.6.4.4 The "in head" insertion mode
-	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhead
-	AddNotImplementedParseError('DoInHeadInsertionMode');
+var
+	st: TStartTagToken;
+
+	function IsStartTag(const List: array of UnicodeString): Boolean;
+	var
+		i: Integer;
+	begin
+		if not (Node is TStartTagToken) then
+		begin
+			Result := False;
+			Exit;
+		end;
+
+		if Length(List) = 0 then
+		begin
+			Result := True;
+			Exit;
+		end;
+
+		Result := TextIs((Node as TStartTagToken).TagName, List);
+	end;
+
+	function IsEndTag(const List: array of UnicodeString): Boolean;
+	var
+		i: Integer;
+	begin
+		if not (Node is TEndTagToken) then
+		begin
+			Result := False;
+			Exit;
+		end;
+
+		if Length(List) = 0 then
+		begin
+			Result := True;
+			Exit;
+		end;
+
+		Result := TextIs((Node as TEndTagToken).TagName, List);
+	end;
+
+	procedure AnythingElse;
+	begin
+		FOpenElements.Pop; //Pop the current node (which will be the head element) off the stack of open elements.
+		SetInsertionMode(imAfterHead); // Switch the insertion mode to "after head".
+		ProcessNodeAccordingToInsertionMode(node, FInsertionMode); //Reprocess the token.
+	end;
+
+	procedure InsertScriptElement;
+	begin
 {
-When the user agent is to apply the rules for the "in head" insertion mode, the user agent must handle the token as follows:
-
-A character token that is one of U+0009 CHARACTER TABULATION, U+000A LINE FEED (LF), U+000C FORM FEED (FF), U+000D CARRIAGE RETURN (CR), or U+0020 SPACE
-Insert the character.
-
-A comment token
-Insert a comment.
-
-A DOCTYPE token
-Parse error. Ignore the token.
-
-A start tag whose tag name is "html"
-Process the token using the rules for the "in body" insertion mode.
-
-A start tag whose tag name is one of: "base", "basefont", "bgsound", "link"
-Insert an HTML element for the token. Immediately pop the current node off the stack of open elements.
-
-Acknowledge the token's self-closing flag, if it is set.
-
-A start tag whose tag name is "meta"
-Insert an HTML element for the token. Immediately pop the current node off the stack of open elements.
-
-Acknowledge the token's self-closing flag, if it is set.
-
-If the active speculative HTML parser is null, then:
-
-If the element has a charset attribute, and getting an encoding from its value results in an encoding, and the confidence is currently tentative, then change the encoding to the resulting encoding.
-
-Otherwise, if the element has an http-equiv attribute whose value is an ASCII case-insensitive match for the string "Content-Type", and the element has a content attribute, and applying the algorithm for extracting a character encoding from a meta element to that attribute's value returns an encoding, and the confidence is currently tentative, then change the encoding to the extracted encoding.
-
-The speculative HTML parser doesn't speculatively apply character encoding declarations in order to reduce implementation complexity.
-
-A start tag whose tag name is "title"
-Follow the generic RCDATA element parsing algorithm.
-
-A start tag whose tag name is "noscript", if the scripting flag is enabled
-A start tag whose tag name is one of: "noframes", "style"
-Follow the generic raw text element parsing algorithm.
-
-A start tag whose tag name is "noscript", if the scripting flag is disabled
-Insert an HTML element for the token.
-
-Switch the insertion mode to "in head noscript".
-
-A start tag whose tag name is "script"
-Run these steps:
+		Run these steps:
 
 Let the adjusted insertion location be the appropriate place for inserting a node.
 
@@ -4381,53 +4401,149 @@ Switch the tokenizer to the script data state.
 Let the original insertion mode be the current insertion mode.
 
 Switch the insertion mode to "text".
-
-An end tag whose tag name is "head"
-Pop the current node (which will be the head element) off the stack of open elements.
-
-Switch the insertion mode to "after head".
-
-An end tag whose tag name is one of: "body", "html", "br"
-Act as described in the "anything else" entry below.
-
-A start tag whose tag name is "template"
-Insert an HTML element for the token.
-
-Insert a marker at the end of the list of active formatting elements.
-
-Set the frameset-ok flag to "not ok".
-
-Switch the insertion mode to "in template".
-
-Push "in template" onto the stack of template insertion modes so that it is the new current template insertion mode.
-
-An end tag whose tag name is "template"
-If there is no template element on the stack of open elements, then this is a parse error; ignore the token.
-
-Otherwise, run these steps:
-
-Generate all implied end tags thoroughly.
-
-If the current node is not a template element, then this is a parse error.
-
-Pop elements from the stack of open elements until a template element has been popped from the stack.
-
-Clear the list of active formatting elements up to the last marker.
-Pop the current template insertion mode off the stack of template insertion modes.
-
-Reset the insertion mode appropriately.
-
-A start tag whose tag name is "head"
-Any other end tag
-Parse error. Ignore the token.
-
-Anything else
-Pop the current node (which will be the head element) off the stack of open elements.
-
-Switch the insertion mode to "after head".
-
-Reprocess the token.
 }
+		raise ENotImplemented.Create('InsertScriptElemetn');
+	end;
+begin
+	//13.2.6.4.4 The "in head" insertion mode
+	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhead
+	AddNotImplementedParseError('DoInHeadInsertionMode');
+
+	if (node is TCharacterToken) and ((node as TCharacterToken).Data in [$0009, $000A, $000C, $000D, $0020]) then
+	begin
+		//A character token that is one of U+0009 CHARACTER TABULATION, U+000A LINE FEED (LF), U+000C FORM FEED (FF), U+000D CARRIAGE RETURN (CR), or U+0020 SPACE
+		InsertCharacter(Node); //Insert the character.
+	end
+	else if node is TCommentToken then
+	begin
+		InsertComment(Node, nil); //Insert a comment.
+	end
+	else if node is TDocTypeToken then
+	begin
+		AddParseError(Node); //Parse error.
+		//Ignore the token.
+	end
+	else if IsStartTag(['html']) then
+	begin
+		//A start tag whose tag name is "html"
+		//Process the token using the rules for the "in body" insertion mode.
+		ProcessNodeAccordingToInsertionMode(node, imInBody);
+	end
+	else if IsStartTag(['base', 'basefont', 'bgsound', 'link']) then
+	begin
+		//A start tag whose tag name is one of: "base", "basefont", "bgsound", "link"
+		//Insert an HTML element for the token.
+		InsertAnHtmlElement(node);
+
+		//Immediately pop the current node off the stack of open elements.
+		FOpenElements.Pop;
+
+		 //Acknowledge the token's self-closing flag, if it is set.
+		if st.SelfClosing then
+			st.AcknowledgeSelfClosing;
+	end
+	else if IsStartTag(['meta']) then
+	begin
+		//A start tag whose tag name is "meta"
+		InsertAnHtmlElement(node); //Insert an HTML element for the token
+
+		FOpenElements.Pop; //Immediately pop the current node off the stack of open elements.
+		st.AcknowledgeSelfClosing; // Acknowledge the token's self-closing flag, if it is set.
+
+		//TODO: If the active speculative HTML parser is null, then:
+{		if FActiveSpeculationHtmlParser = nil then
+		begin
+			//If the element has a charset attribute, and getting an encoding
+			//from its value results in an encoding, and the confidence is currently
+			//tentative,
+				then change the encoding to the resulting encoding.
+			else
+				Otherwise, if the element has an http-equiv attribute whose value is
+				an ASCII case-insensitive match for the string "Content-Type",
+				and the element has a content attribute, and applying the algorithm
+				for extracting a character encoding from a meta element to that
+				attribute's value returns an encoding, and the confidence is currently
+				tentative,
+					then change the encoding to the extracted encoding.
+		end;}
+	end
+	else if IsStartTag(['title']) then
+	begin
+		//A start tag whose tag name is "title"
+		GenericParsingAlgorithm(node, tsRawTextState); //Follow the generic RCDATA element parsing algorithm.
+	end
+	else if (Scripting and (isStartTag(['noscript'])))
+				or IsStartTag(['noframes', 'style']) then
+	begin
+		//A start tag whose tag name is "noscript", if the scripting flag is enabled
+		//A start tag whose tag name is one of: "noframes", "style"
+		GenericParsingAlgorithm(node, tsRawTextState); //Follow the generic raw text element parsing algorithm.
+	end
+	else if (not Scripting) and (st.TagName = 'noscript') then
+	begin
+		//A start tag whose tag name is "noscript", if the scripting flag is disabled
+		InsertAnHtmlElement(node); //Insert an HTML element for the token.
+		SetInsertionMode(imInHeadNoscript); //Switch the insertion mode to "in head noscript".
+	end
+	else if IsStartTag(['script']) then
+	begin
+		//A start tag whose tag name is "script"
+		InsertScriptElement;
+	end
+	else if IsEndTag(['head']) then
+	begin
+		//An end tag whose tag name is "head"
+		FOpenElements.Pop; // Pop the current node (which will be the head element) off the stack of open elements.
+		SetInsertionMode(imAfterHead); //Switch the insertion mode to "after head".
+	end
+	else if IsEndTag(['body', 'html', 'br']) then
+	begin
+		//An end tag whose tag name is one of: "body", "html", "br"
+		AnythingElse; //Act as described in the "anything else" entry below.
+	end
+	else if IsStartTag(['template']) then
+	begin
+		//A start tag whose tag name is "template"
+		InsertAnHtmlElement(node); // Insert an HTML element for the token.
+
+		Insert a marker at the end of the list of active formatting elements.
+
+		Set the frameset-ok flag to "not ok".
+
+		SetInsertionMode(imInTemplate); // Switch the insertion mode to "in template".
+
+		Push "in template" onto the stack of template insertion modes so that it is the new current template insertion mode.
+	end
+	else if IsEndTag(['template']) then
+	begin
+		//An end tag whose tag name is "template"
+		If there is no template element on the stack of open elements, then
+		begin
+			AddParseError(node); //this is a parse error;
+			Exit; //ignore the token.
+		end;
+
+		Generate all implied end tags thoroughly.
+
+		If the current node is not a template element, then this is a parse error.
+
+		Pop elements from the stack of open elements until a template element has been popped from the stack.
+
+		Clear the list of active formatting elements up to the last marker.
+
+		Pop the current template insertion mode off the stack of template insertion modes.
+
+		Reset the insertion mode appropriately.
+	end
+	else if IsStartTag(['head']) or (Node is TEndTagToken) then
+	begin
+		//A start tag whose tag name is "head"
+		//Any other end tag
+		AddParseError(node);// Parse error.
+		Exit; //Ignore the token.
+	end
+	else
+		AnythingElse;
 end;
 
 procedure THtmlParser.DoInHeadNoscriptInsertionMode(Node: THtmlToken);
@@ -5189,6 +5305,27 @@ Any other end tag
 Pop the current node off the stack of open elements.
 
 Switch the insertion mode to the original insertion mode.
+}
+end;
+
+procedure THtmlParser.GenericRCDATAElementParsingAlgorithm(const Token: THtmlToken; Parent: TNode);
+begin
+	//13.2.6.2 Parsing elements that contain only text
+	//https://html.spec.whatwg.org/multipage/parsing.html#generic-rcdata-element-parsing-algorithm
+	raise ENotImplemnetedException.Create('GenericRCDATAElementParsingAlgorithm');
+
+{
+	The generic raw text element parsing algorithm and the generic RCDATA element
+	parsing algorithm consist of the following steps. These algorithms are always invoked in response to a start tag token.
+}
+	InsertAnHTMLElementForTheToken(Token, Parent);
+Insert an HTML element for the token.
+
+If the algorithm that was invoked is the generic raw text element parsing algorithm, switch the tokenizer to the RAWTEXT state; otherwise the algorithm invoked was the generic RCDATA element parsing algorithm, switch the tokenizer to the RCDATA state.
+
+Let the original insertion mode be the current insertion mode.
+
+Then, switch the insertion mode to "text".
 }
 end;
 
@@ -5978,7 +6115,77 @@ Parse error. Ignore the token.
 }
 end;
 
-procedure THtmlParser.InsertComment(const CommentData: UnicodeString; Parent: TNode);
+procedure THtmlParser.InsertAnHtmlElement(const Token: THtmlToken; Parent: TNode);
+begin
+	//https://html.spec.whatwg.org/multipage/parsing.html#insert-an-html-element
+{
+	When the steps below require the user agent to insert an HTML element for a token,
+	the user agent must insert a foreign element for the token, in the HTML namespace.
+}
+	AddNotIimplementedParseError;
+end;
+
+procedure THtmlParser.InsertCharacter(const Character: UnicodeString; Parent: TNode);
+begin
+//https://html.spec.whatwg.org/multipage/parsing.html#insert-a-character
+	raise ENotImplmenetedException.Create;
+{
+When the steps below require the user agent to insert a character while processing a token, the user agent must run the following steps:
+
+Let data be the characters passed to the algorithm, or, if no characters were explicitly specified, the character of the character token being processed.
+
+Let the adjusted insertion location be the appropriate place for inserting a node.
+
+If the adjusted insertion location is in a Document node, then return.
+
+The DOM will not let Document nodes have Text node children, so they are dropped on the floor.
+
+If there is a Text node immediately before the adjusted insertion location, then append data to that Text node's data.
+
+Otherwise, create a new Text node whose data is data and whose node document is the same as that of the element in which the adjusted insertion location finds itself, and insert the newly created node at the adjusted insertion location.
+
+Here are some sample inputs to the parser and the corresponding number of Text nodes that they result in, assuming a user agent that executes scripts.
+
+Input	Number of Text nodes
+A<script>
+var script = document.getElementsByTagName('script')[0];
+document.body.removeChild(script);
+</script>B
+One Text node in the document, containing "AB".
+A<script>
+var text = document.createTextNode('B');
+document.body.appendChild(text);
+</script>C
+Three Text nodes; "A" before the script, the script's contents, and "BC" after the script (the parser appends to the Text node created by the script).
+A<script>
+var text = document.getElementsByTagName('script')[0].firstChild;
+text.data = 'B';
+document.body.appendChild(text);
+</script>C
+Two adjacent Text nodes in the document, containing "A" and "BC".
+A<table>B<tr>C</tr>D</table>
+One Text node before the table, containing "ABCD". (This is caused by foster parenting.)
+A<table><tr> B</tr> C</table>
+One Text node before the table, containing "A B C" (A-space-B-space-C). (This is caused by foster parenting.)
+A<table><tr> B</tr> </em>C</table>
+One Text node before the table, containing "A BC" (A-space-B-C), and one Text node inside the table (as a child of a tbody) with a single space character. (Space characters separated from non-space characters by non-character tokens are not affected by foster parenting, even if those other tokens then get ignored.)
+When the steps below require the user agent to insert a comment while processing a comment token, optionally with an explicitly insertion position position, the user agent must run the following steps:
+
+Let data be the data given in the comment token being processed.
+
+If position was specified, then let the adjusted insertion location be position. Otherwise, let adjusted insertion location be the appropriate place for inserting a node.
+
+Create a Comment node whose data attribute is set to data and whose node document is the same as that of the node in which the adjusted insertion location finds itself.
+
+Insert the newly created node at the adjusted insertion location.
+
+DOM mutation events must not fire for changes caused by the UA parsing the document. This includes the parsing of any content inserted using document.write() and document.writeln() calls. [UIEVENTS]
+
+However, mutation observers do fire, as required by DOM .
+}
+end;
+
+procedure THtmlParser.InsertComment(const Token: THtmlToken; Parent: TNode);
 begin
 	//https://html.spec.whatwg.org/multipage/parsing.html#insert-a-comment
 {
@@ -6005,6 +6212,7 @@ var
 begin
 	parser := THtmlParser.Create;
 	try
+		parser.Scripting := False;
 		Result := parser.ParseString(HtmlStr);
 	finally
 		parser.Free;
@@ -6047,9 +6255,9 @@ begin
 	Log('    ==> Emitted token EndTag: </'+AToken.TagName+'>');
 end;
 
-procedure THtmlParser.ProcessNodeAccordingToInsertionMode(const Node: THtmlToken);
+procedure THtmlParser.ProcessNodeAccordingToInsertionMode(const Node: THtmlToken; AInsertionMode: TInsertionMode);
 begin
-	case FInsertionMode of
+	case AInsertionMode of
 	imInitial:					DoInitialInsertionMode(Node); 				//"initial"
 	imBeforeHtml:				DoBeforeHtmlInsertionMode(Node); 			//"before html"
 	imBeforeHead:				DoBeforeHeadInsertionMode(Node); 			//"before head"
@@ -6288,6 +6496,20 @@ begin
 	FInsertionMode := Mode;
 end;
 
+function THtmlParser.TextIs(const Left: UnicodeString; const Right: array of UnicodeString): Boolean;
+var
+	i: Integer;
+begin
+	Result := False;
+
+	for i := 0 to Hight(Right) do
+	begin
+		Result := SameText(Left, Right[i]);
+		if Result then
+			Exit;
+	end;
+end;
+
 { TElementStack }
 
 function TElementStack.BottomMost: TElement;
@@ -6311,6 +6533,11 @@ end;
 function TElementStack.GetItems(Index: Integer): TElement;
 begin
 	Result := TObject(Self.Get(Index)) as TElement;
+end;
+
+procedure TElementStack.Pop;
+begin
+
 end;
 
 function TElementStack.TopMost: TElement;
@@ -6382,6 +6609,11 @@ begin
 end;
 
 { TStartTagToken }
+
+procedure TStartTagToken.AcknowledgeSelfClosing;
+begin
+	FSelfClosing := False;
+end;
 
 constructor TStartTagToken.Create;
 begin
