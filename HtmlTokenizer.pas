@@ -151,6 +151,7 @@ type
 	public
 		TokenType: THtmlTokenType;
 		constructor Create(ATokenType: THtmlTokenType);
+		destructor Destroy; override;
 		property Description: string read GetDescription;
 	end;
 
@@ -187,13 +188,18 @@ type
 		property ForceQuirks: Boolean read FForceQuirks write FForceQuirks;
 	end;
 
+	TAttribute = record
+		Name: UnicodeString;
+		Value: UnicodeString;
+	end;
+	TAttributes = array of TAttribute;
+
 	//Base class of StartTagToken and EndTagToken
 	TTagToken = class(THtmlToken)
 	private
-		FData: UCS4String;
-		FAttributes: TList;
+		FTagName: UnicodeString;
+		FAttributes: TAttributes;
 		FSelfClosing: Boolean;
-		function GetTagName: UnicodeString;
 	protected
 		CurrentAttributeName: UnicodeString;
 		CurrentAttributeValue: UnicodeString;
@@ -205,9 +211,10 @@ type
 		constructor Create(ATokenType: THtmlTokenType);
 		destructor Destroy; override;
 		procedure AppendCharacter(const ch: UCS4Char); //append to TagName
+		procedure AddAttribute(Name, Value: UnicodeString);
 
-		property TagName: UnicodeString read GetTagName;
-		property Attributes: TList read FAttributes;
+		property TagName: UnicodeString read FTagName write FTagName;
+		property Attributes: TAttributes read FAttributes;
 		property SelfClosing: Boolean read FSelfClosing write FSelfClosing;
 	end;
 
@@ -224,26 +231,25 @@ type
 
 	TCommentToken = class(THtmlToken)
 	private
-		FData: UCS4String;
-		function GetDataString: UnicodeString;
+		FData: UnicodeString;
 	protected
-      function GetDescription: string; override;
+		function GetDescription: string; override;
 	public
 		constructor Create;
 		procedure AppendCharacter(const ch: UCS4Char); //to Data
 
-		property DataString: UnicodeString read GetDataString;
+		property DataString: UnicodeString read FData write FData;
 	end;
 
 	TCharacterToken = class(THtmlToken)
 	private
-		function GetDataString: UnicodeString;
+		FData: UnicodeString;
 	protected
 		function GetDescription: string; override;
 	public
-		Data: UCS4Char;
 		constructor Create;
-		property DataString: UnicodeString read GetDataString;
+		procedure AppendCharacter(const ch: UCS4Char);
+		property Data: UnicodeString read FData write FData;
 	end;
 
 	TEndOfFileToken = class(THtmlToken)
@@ -258,36 +264,45 @@ type
 
 	THtmlTokenizer = class
 	private
+		FLogFlags: Cardinal;
 		FStream: TInputStream;
 		FState2: TTokenizerState;
 		FReturnState2: TTokenizerState;
 		FCurrentInputCharacter: UCS4Char;
-		FCurrentToken: THtmlToken;
+		FCurrentToken2: THtmlToken;
 		FCharacterReferenceCode: Cardinal;
 		FReconsume: Boolean;
 
 		FEOF: Boolean;
 		FTemporaryBuffer: UCS4String;
 		FNameOfLastEmittedStartTag: string;
+		FDelayedEmitToken: TCharacterToken;
 
 		FParserPause: Boolean;
 
 		FOnToken: TTokenEvent; //event handler
-		procedure AddNotImplementedParseError(const StateHandlerName: string);
+		FOnParseError: TNotifyEvent;
 
-		function GetNext: UCS4Char;
 		procedure Initialize;
 
 		procedure AddParseError(ParseErrorName: string);
+		procedure AddNotImplementedParseError(const StateHandlerName: string);
+		function ExtractCurrentToken: THtmlToken;
+		procedure FlushDelayedTokens;
+
+		function GetNext: UCS4Char;
+
+		procedure SetCurrentToken(const Value: THtmlToken);			//13.2.5.80 Numeric character reference end state
 
 		//The output of the tokenization step is a series of zero or more of the following tokens:
 		//	DOCTYPE, start tag, end tag, comment, character, end-of-file.
 		//	DOCTYPE tokens have a name, a public identifier, a system identifier, and a force-quirks flag.
 		procedure EmitToken(const AToken: THtmlToken);
+		procedure EmitCurrentToken;				//Whatever the current token is
 			procedure EmitCurrentDocTypeToken;	//Emit the current DOCTYPE token
 			procedure EmitCurrentTagToken;		//Emits the current token (whether it be a StartTag or EndTag)
-				procedure EmitStartTag;				//Emit the current StartTag token
-				procedure EmitEndTag;				//Emit the current EndTag token
+				procedure EmitStartTag(StartTag: TStartTagToken);	//Emit the current StartTag token
+				procedure EmitEndTag(EndTag: TEndTagToken);		//Emit the current EndTag token
 			procedure EmitCurrentCommentToken;	//Emit the current Comment token
 			procedure EmitCharacter(const Character: UCS4Char); //Emit a Character token
 			procedure EmitEndOfFileToken;			//Emit an EndOfFile token
@@ -314,6 +329,8 @@ type
 		procedure LogFmt(const Fmt: string; const Args: array of const);
 
 		property CurrentInputCharacter: UCS4Char read FCurrentInputCharacter; //The current input character is the last character to have been consumed.
+
+		property CurrentToken: THtmlToken read FCurrentToken2 write SetCurrentToken;
 		property CurrentTagToken: TTagToken read GetCurrentTagToken; //The current tag token (either TStartTagtoken or TEndTagToken)
 	private
 		//Tokenizer state machine handlers
@@ -397,18 +414,27 @@ type
 		procedure DoDecimalCharacterReferenceStartState;		//13.2.5.77 Decimal character reference start state
 		procedure DoHexadecimalCharacterReferenceState;			//13.2.5.78 Hexadecimal character reference state
 		procedure DoDecimalCharacterReferenceState;				//13.2.5.79 Decimal character reference state
-		procedure DoNumericCharacterReferenceEndState;			//13.2.5.80 Numeric character reference end state
+		procedure DoNumericCharacterReferenceEndState;
 	public
 		constructor Create(Html: UnicodeString);
+		destructor Destroy; override;
 
 		procedure Parse;
 
 		procedure SetState(const State: TTokenizerState); //tree construction has two situations where it needs to change the tokenzier state
 
 		property ParserPause: Boolean read FParserPause write FParserPause;
+		property LoggingFlags: Cardinal read FLogFlags write FLogFlags;
 		property OnToken: TTokenEvent read FOnToken write FOnToken;
 	end;
 
+
+const
+	LOG_TOKENIZER_STATECHANGE		= $00000001;
+	LOG_TOKENIZER_EMITTOKEN       = $00000002;
+	LOG_TOKENIZER_PARSEERROR		= $00000004;
+
+type
 {
 	Delphi 5 had the issue with .Stat implementation:
 
@@ -442,6 +468,7 @@ type
 
 	//Again, the version is Dephi is buggy. So we fix their bugs for them.
 	function UCS4ToUnicodeString(const S: UCS4String): UnicodeString;
+	function UCS4StringToUnicodeString(const S: UCS4String): UnicodeString;
 
 	procedure UCS4StrCat(var Dest: UCS4String; const Source: UCS4Char);				//similar to System._UStrCat
 	procedure UCS4StrFromChar(var Dest: UCS4String; const Source: UCS4Char);		//similar to System._UStrFromChar
@@ -455,7 +482,7 @@ implementation
 
 uses
 	Windows, TypInfo, ComObj,
-	HtmlParserTests,
+{$IFDEF UnitTests}HtmlTokenizerTests,{$ENDIF}
 	HtmlTags;
 
 const
@@ -544,7 +571,11 @@ end;
 
 procedure THtmlTokenizer.AddParseError(ParseErrorName: string);
 begin
-	LogFmt('Parse Error: %s', [ParseErrorName]);
+	if (FLogFlags and LOG_TOKENIZER_PARSEERROR) <> 0 then
+		LogFmt('Parse Error: %s', [ParseErrorName]);
+
+	if Assigned(FOnParseError) then
+		FOnParseError(Self);
 end;
 
 procedure THtmlTokenizer.AppendToCurrentAttributeName(const Value: UCS4Char);
@@ -559,7 +590,7 @@ end;
 
 procedure THtmlTokenizer.AppendToCurrentCommentData(const Value: UCS4Char);
 begin
-	(FCurrentToken as TCommentToken).AppendCharacter(Value);
+	(CurrentToken as TCommentToken).AppendCharacter(Value);
 end;
 
 procedure THtmlTokenizer.AppendToTemporaryBuffer(const Value: UCS4Char);
@@ -602,66 +633,66 @@ begin
 		invocations of the tokenizer, yielding control back to the caller.
 }
 		if ParserPause then
-			Exit;
+			Break;
 
 		case FState2 of
-		tsDataState: 				DoDataState; //13.2.5.1 Data state
-		tsRCDataState: 			DoRCDATAState;	//13.2.5.2 RCDATA state
-		tsRawTextState: 			DoRawTextState;	 //13.2.5.3 RAWTEXT state
-		tsScriptDataState: 		DoScriptDataState; //13.2.5.4 Script data state
-		tsPlaintextState: 		DoPlaintextState; //13.2.5.5 PLAINTEXT state
-		tsTagOpenState: 			DoTagOpenState; //13.2.5.6 Tag open state
-		tsEndTagOpenState: 		DoEndTagOpenState; //13.2.5.7 End tag open state
-		tsTagNameState: 			DoTagNameState; //13.2.5.8 Tag name state
-		tsRCDATALessThanSignState:				DoRCDATALessThanSignState; //13.2.5.9 RCDATA less-than sign state
-		tsRCDATAEndTagOpenState:				DoRCDATAEndTagOpenState; //13.2.5.10 RCDATA end tag open state
-		tsRCDATAEndTagNameState:				DoRCDATAEndTagNameState; //13.2.5.11 RCDATA end tag name state
-		tsRAWTEXTLessThanSignState:			DoRAWTEXTLessThanSignState; //13.2.5.12 RAWTEXT less-than sign state
-		tsRAWTEXTEndTagOpenState:				DoRAWTEXTEndTagOpenState; //13.2.5.13 RAWTEXT end tag open state
-		tsRAWTEXTEndTagNameState:				DoRAWTEXTEndTagNameState; //13.2.5.14 RAWTEXT end tag name state
-		tsScriptDataLessThanSignState:		DoScriptDataLessThanSignState; //13.2.5.15 Script data less-than sign state
-		tsScriptDataEndTagOpenState:			DoScriptDataEndTagOpenState; //13.2.5.16 Script data end tag open state
-		tsScriptDataEndTagNameState:			DoScriptDataEndTagNameState; //13.2.5.17 Script data end tag name state
-		tsScriptDataEscapeStartState:			DoScriptDataEscapeStartState; //13.2.5.18 Script data escape start state
-		tsScriptDataEscapeStartDashState:	DoScriptDataEscapeStartDashState; //13.2.5.19 Script data escape start dash state
-		tsScriptDataEscapedState:				DoScriptDataEscapedState; //13.2.5.20 Script data escaped state
-		tsScriptDataEscapedDashState:			DoScriptDataEscapedDashState; //13.2.5.21 Script data escaped dash state
-		tsScriptDataEscapedDashDashState:	DoScriptDataEscapedDashDashState; //13.2.5.22 Script data escaped dash dash state
+		tsDataState: 					DoDataState; //13.2.5.1 Data state
+		tsRCDataState: 				DoRCDATAState;	//13.2.5.2 RCDATA state
+		tsRawTextState: 				DoRawTextState;	 //13.2.5.3 RAWTEXT state
+		tsScriptDataState: 			DoScriptDataState; //13.2.5.4 Script data state
+		tsPlaintextState: 			DoPlaintextState; //13.2.5.5 PLAINTEXT state
+		tsTagOpenState: 				DoTagOpenState; //13.2.5.6 Tag open state
+		tsEndTagOpenState: 			DoEndTagOpenState; //13.2.5.7 End tag open state
+		tsTagNameState: 								DoTagNameState; //13.2.5.8 Tag name state
+		tsRCDATALessThanSignState:					DoRCDATALessThanSignState; //13.2.5.9 RCDATA less-than sign state
+		tsRCDATAEndTagOpenState:					DoRCDATAEndTagOpenState; //13.2.5.10 RCDATA end tag open state
+		tsRCDATAEndTagNameState:					DoRCDATAEndTagNameState; //13.2.5.11 RCDATA end tag name state
+		tsRAWTEXTLessThanSignState:				DoRAWTEXTLessThanSignState; //13.2.5.12 RAWTEXT less-than sign state
+		tsRAWTEXTEndTagOpenState:					DoRAWTEXTEndTagOpenState; //13.2.5.13 RAWTEXT end tag open state
+		tsRAWTEXTEndTagNameState:					DoRAWTEXTEndTagNameState; //13.2.5.14 RAWTEXT end tag name state
+		tsScriptDataLessThanSignState:			DoScriptDataLessThanSignState; //13.2.5.15 Script data less-than sign state
+		tsScriptDataEndTagOpenState:				DoScriptDataEndTagOpenState; //13.2.5.16 Script data end tag open state
+		tsScriptDataEndTagNameState:				DoScriptDataEndTagNameState; //13.2.5.17 Script data end tag name state
+		tsScriptDataEscapeStartState:				DoScriptDataEscapeStartState; //13.2.5.18 Script data escape start state
+		tsScriptDataEscapeStartDashState:		DoScriptDataEscapeStartDashState; //13.2.5.19 Script data escape start dash state
+		tsScriptDataEscapedState:					DoScriptDataEscapedState; //13.2.5.20 Script data escaped state
+		tsScriptDataEscapedDashState:				DoScriptDataEscapedDashState; //13.2.5.21 Script data escaped dash state
+		tsScriptDataEscapedDashDashState:		DoScriptDataEscapedDashDashState; //13.2.5.22 Script data escaped dash dash state
 		tsScriptDataEscapedLessThanSignState:	DoScriptDataEscapedLessThanSignState; //13.2.5.23 Script data escaped less-than sign state
 		tsScriptDataEscapedEndTagOpenState:		DoScriptDataEscapedEndTagOpenState; //13.2.5.24 Script data escaped end tag open state
 		tsScriptDataEscapedEndTagNameState:		DoScriptDataEscapedEndTagNameState; //13.2.5.25 Script data escaped end tag name state
-		tsScriptDataDoubleEscapeStartState:	DoScriptDataDoubleEscapeStartState; //13.2.5.26 Script data double escape start state
+		tsScriptDataDoubleEscapeStartState:		DoScriptDataDoubleEscapeStartState; //13.2.5.26 Script data double escape start state
 		tsScriptDataDoubleEscapedState:			DoScriptDataDoubleEscapedState; //13.2.5.27 Script data double escaped state
 		tsScriptDataDoubleEscapedDashState:		DoScriptDataDoubleEscapedDashState; //13.2.5.28 Script data double escaped dash state
 		tsScriptDataDoubleEscapedDashDashState:		DoScriptDataDoubleEscapedDashDashState; //13.2.5.29 Script data double escaped dash dash state
 		tsScriptDataDoubleEscapedLessThanSignState:	DoScriptDataDoubleEscapedLessThanSignState; //13.2.5.30 Script data double escaped less-than sign state
-		tsScriptDataDoubleEscapeEndState:	DoScriptDataDoubleEscapeEndState; //13.2.5.31 Script data double escape end state
-		tsBeforeAttributeNameState:			DoBeforeAttributeNameState; //13.2.5.32 Before attribute name state
-		tsAttributeNameState:					DoAttributeNameState; //13.2.5.33 Attribute name state
-		tsAfterAttributeNameState:				DoAfterAttributeNameState; //13.2.5.34 After attribute name state
-		tsBeforeAttributeValueState:			DoBeforeAttributeValueState; //13.2.5.35 Before attribute value state
-		tsAttributeValueDoubleQuotedState:	DoAttributeValueDoubleQuotedState; //13.2.5.36 Attribute value (double-quoted) state
-		tsAttributeValueSingleQuotedState:	DoAttributeValueSingleQuotedState; //13.2.5.37 Attribute value (single-quoted) state
-		tsAttributeValueUnquotedState: DoAttributeValueUnquotedState; //13.2.5.38 Attribute value (unquoted) state
-		tsAfterAttributeValueQuotedState:	DoAfterAttributeValueQuotedState; //13.2.5.39 After attribute value (quoted) state
-		tsSelfClosingStartTagState:			DoSelfClosingStartTagState; //13.2.5.40 Self-closing start tag state
-		tsBogusCommentState:						DoBogusCommentState; //13.2.5.41 Bogus comment state
-		tsMarkupDeclarationOpenState:			DoMarkupDeclarationOpenState; //13.2.5.42 Markup declaration open state
-		tsCommentStartState:						DoCommentStartState; //13.2.5.43 Comment start state
-		tsCommentStartDashState:				DoCommentStartDashState; //13.2.5.44 Comment start dash state
-		tsCommentState:							DoCommentState; //13.2.5.45 Comment state
-		tsCommentLessThanSignState:			DoCommentLessThanSignState; //13.2.5.46 Comment less-than sign state
-		tsCommentLessThanSignBangState:		DoCommentLessThanSignBangState; //13.2.5.47 Comment less-than sign bang state
-		tsCommentLessThanSignBangDashState:	DoCommentLessThanSignBangDashState; //13.2.5.48 Comment less-than sign bang dash state
-		tsCommentLessThanSignBangDashDashState:	DoCommentLessThanSignBangDashDashState; //13.2.5.49 Comment less-than sign bang dash dash state
-		tsCommentEndDashState:					DoCommentEndDashState; //13.2.5.50 Comment end dash state
-		tsCommentEndState:						DoCommentEndState; //13.2.5.51 Comment end state
-		tsCommentEndBangState:					DoCommentEndBangState; //13.2.5.52 Comment end bang state
-		tsDOCTYPEState:							DoDOCTYPEState; //13.2.5.53 DOCTYPE state
-		tsBeforeDOCTYPENameState:				DoBeforeDOCTYPENameState; //13.2.5.54 Before DOCTYPE name state
-		tsDOCTYPENameState:						DoDOCTYPENameState; //13.2.5.55 DOCTYPE name state
-		tsAfterDOCTYPENameState:				DoAfterDOCTYPENameState; //13.2.5.56 After DOCTYPE name state
-		tsAfterDOCTYPEPublicKeywordState:	DoAfterDOCTYPEPublicKeywordState; //13.2.5.57 After DOCTYPE public keyword state
+		tsScriptDataDoubleEscapeEndState:				DoScriptDataDoubleEscapeEndState; //13.2.5.31 Script data double escape end state
+		tsBeforeAttributeNameState:						DoBeforeAttributeNameState; //13.2.5.32 Before attribute name state
+		tsAttributeNameState:								DoAttributeNameState; //13.2.5.33 Attribute name state
+		tsAfterAttributeNameState:							DoAfterAttributeNameState; //13.2.5.34 After attribute name state
+		tsBeforeAttributeValueState:						DoBeforeAttributeValueState; //13.2.5.35 Before attribute value state
+		tsAttributeValueDoubleQuotedState:				DoAttributeValueDoubleQuotedState; //13.2.5.36 Attribute value (double-quoted) state
+		tsAttributeValueSingleQuotedState:				DoAttributeValueSingleQuotedState; //13.2.5.37 Attribute value (single-quoted) state
+		tsAttributeValueUnquotedState:					DoAttributeValueUnquotedState; //13.2.5.38 Attribute value (unquoted) state
+		tsAfterAttributeValueQuotedState:				DoAfterAttributeValueQuotedState; //13.2.5.39 After attribute value (quoted) state
+		tsSelfClosingStartTagState:						DoSelfClosingStartTagState; //13.2.5.40 Self-closing start tag state
+		tsBogusCommentState:									DoBogusCommentState; //13.2.5.41 Bogus comment state
+		tsMarkupDeclarationOpenState:						DoMarkupDeclarationOpenState; //13.2.5.42 Markup declaration open state
+		tsCommentStartState:									DoCommentStartState; //13.2.5.43 Comment start state
+		tsCommentStartDashState:							DoCommentStartDashState; //13.2.5.44 Comment start dash state
+		tsCommentState:										DoCommentState; //13.2.5.45 Comment state
+		tsCommentLessThanSignState:						DoCommentLessThanSignState; //13.2.5.46 Comment less-than sign state
+		tsCommentLessThanSignBangState:					DoCommentLessThanSignBangState; //13.2.5.47 Comment less-than sign bang state
+		tsCommentLessThanSignBangDashState:				DoCommentLessThanSignBangDashState; //13.2.5.48 Comment less-than sign bang dash state
+		tsCommentLessThanSignBangDashDashState:		DoCommentLessThanSignBangDashDashState; //13.2.5.49 Comment less-than sign bang dash dash state
+		tsCommentEndDashState:								DoCommentEndDashState; //13.2.5.50 Comment end dash state
+		tsCommentEndState:									DoCommentEndState; //13.2.5.51 Comment end state
+		tsCommentEndBangState:								DoCommentEndBangState; //13.2.5.52 Comment end bang state
+		tsDOCTYPEState:										DoDOCTYPEState; //13.2.5.53 DOCTYPE state
+		tsBeforeDOCTYPENameState:							DoBeforeDOCTYPENameState; //13.2.5.54 Before DOCTYPE name state
+		tsDOCTYPENameState:									DoDOCTYPENameState; //13.2.5.55 DOCTYPE name state
+		tsAfterDOCTYPENameState:							DoAfterDOCTYPENameState; //13.2.5.56 After DOCTYPE name state
+		tsAfterDOCTYPEPublicKeywordState:				DoAfterDOCTYPEPublicKeywordState; //13.2.5.57 After DOCTYPE public keyword state
 		tsBeforeDOCTYPEPublicIdentifierState:			DoBeforeDOCTYPEPublicIdentifierState; //13.2.5.58 Before DOCTYPE public identifier state
 		tsDOCTYPEPublicIdentifierDoubleQuotedState:	DoDOCTYPEPublicIdentifierDoubleQuotedState; //13.2.5.59 DOCTYPE public identifier (double-quoted) state
 		tsDOCTYPEPublicIdentifierSingleQuotedState:	DoDOCTYPEPublicIdentifierSingleQuotedState; //13.2.5.60 DOCTYPE public identifier (single-quoted) state
@@ -691,6 +722,8 @@ begin
 			Break;
 		end;
 	end;
+
+	FlushDelayedTokens;
 end;
 
 procedure THtmlTokenizer.DoDataState;
@@ -823,13 +856,13 @@ begin
 	end
 	else if ch in asciiAlpha then
 	begin
-		FCurrentToken := TStartTagToken.Create; //Create a new start tag token, set its tag name to the empty string
+		CurrentToken := TStartTagToken.Create; //Create a new start tag token, set its tag name to the empty string
 		Reconsume(tsTagNameState); //Reconsume in the tag name state.
 	end
 	else if ch = Ord('?') then //U+003F QUESTION MARK (?)
 	begin
 		AddParseError('unexpected-question-mark-instead-of-tag-name'); //This is an unexpected-question-mark-instead-of-tag-name parse error
-		FCurrentToken := TCommentToken.Create; //Create a comment token whose data is the empty string.
+		CurrentToken := TCommentToken.Create; //Create a comment token whose data is the empty string.
 		Reconsume(tsBogusCommentState); //Reconsume in the bogus comment state.
 	end
 	else if ch = UEOF then
@@ -855,7 +888,7 @@ begin
 	ch := Consume; //consume the next input character
 	if ch in asciiAlpha then
 	begin
-		FCurrentToken := TEndTagToken.Create; //Create a new end tag token, set its tag name to the empty string.
+		CurrentToken := TEndTagToken.Create; //Create a new end tag token, set its tag name to the empty string.
 		Reconsume(tsTagNameState); //Reconsume in the tag name state.
 	end
 	else if ch = Ord('>') then //U+003E GREATER-THAN SIGN (>)
@@ -873,7 +906,7 @@ begin
 	else
 	begin
 		AddParseError('invalid-first-character-of-tag-name'); //This is an invalid-first-character-of-tag-name parse error.
-		FCurrentToken := TCommentToken.Create; //Create a comment token whose data is the empty string.
+		CurrentToken := TCommentToken.Create; //Create a comment token whose data is the empty string.
 		Reconsume(tsBogusCommentState); //Reconsume in the bogus comment state.
 	end;
 end;
@@ -952,7 +985,7 @@ begin
 	ch := Consume; //consume the next input character
 	if ch in asciiAlpha then
 	begin
-		FCurrentToken := TEndTagToken.Create; //Create a new end tag token
+		CurrentToken := TEndTagToken.Create; //Create a new end tag token
 		//set its tag name to the empty string.
 		Reconsume(tsRCDATAEndTagNameState); //Reconsume in the RCDATA end tag name state.
 	end
@@ -994,7 +1027,7 @@ begin
 		//U+0020 SPACE
 
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 			SetState(tsBeforeAttributeNameState) //then switch to the before attribute name state.
 		else
 			AnythingElse; //Otherwise, treat it as per the "anything else" entry below.
@@ -1002,7 +1035,7 @@ begin
 	else if ch = $002F then //U+002F SOLIDUS (/)
 	begin
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 			SetState(tsSelfClosingStartTagState) //then switch to the self-closing start tag state.
 		else
 			AnythingElse; //Otherwise, treat it as per the "anything else" entry below.
@@ -1010,7 +1043,7 @@ begin
 	else if ch = $003E then //U+003E GREATER-THAN SIGN (>)
 	begin
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 		begin
 			SetState(tsDataState); //then switch to the data state
 			EmitCurrentTagToken; //and emit the current tag token.
@@ -1020,12 +1053,12 @@ begin
 	end
 	else if ch in asciiUpperAlpha then
 	begin
-		(FCurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter + $0020); //Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+		(CurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter + $0020); //Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
 		AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
 	end
 	else if ch in asciiLowerAlpha then
 	begin
-		(FCurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter); //Append the current input character to the current tag token's tag name.
+		(CurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter); //Append the current input character to the current tag token's tag name.
 		AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
 	end
 	else
@@ -1060,7 +1093,7 @@ begin
 	ch := Consume; //consume the next input character
 	if ch in asciiAlpha then
 	begin
-		FCurrentToken := TEndTagToken.Create; //Create a new end tag token,
+		CurrentToken := TEndTagToken.Create; //Create a new end tag token,
 		//set its tag name to the empty string.
 		Reconsume(tsRAWTEXTEndTagNameState); //Reconsume in the RAWTEXT end tag name state.
 	end
@@ -1102,7 +1135,7 @@ begin
 		//U+0020 SPACE
 
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 			SetState(tsBeforeAttributeNameState) //switch to the before attribute name state.
 		else
 			AnythingElse; //	treat it as per the "anything else" entry below.
@@ -1110,7 +1143,7 @@ begin
 	else if ch = $002F then //U+002F SOLIDUS (/)
 	begin
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 			SetState(tsSelfClosingStartTagState) //switch to the self-closing start tag state.
 		else
 			AnythingElse; //	treat it as per the "anything else" entry below.
@@ -1118,7 +1151,7 @@ begin
 	else if ch = $003E then //U+003E GREATER-THAN SIGN (>)
 	begin
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 		begin
 			SetState(tsDataState); //switch to the data state
 			EmitCurrentTagToken; //and emit the current tag token.
@@ -1128,12 +1161,12 @@ begin
 	end
 	else if ch in asciiUpperAlpha then
 	begin
-		(FCurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter + $0020); //Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+		(CurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter + $0020); //Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
 		AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
 	end
 	else if ch in asciiLowerAlpha then
 	begin
-		(FCurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter); //Append the current input character to the current tag token's tag name.
+		(CurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter); //Append the current input character to the current tag token's tag name.
 		AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
 	end
 	else
@@ -1160,7 +1193,7 @@ begin
 	end
 	else
 	begin
-		EmitCharacter($002C); //Emit a U+003C LESS-THAN SIGN character token.
+		EmitCharacter($003C); //Emit a U+003C LESS-THAN SIGN character token.
 		Reconsume(tsScriptDataState); //Reconsume in the script data state.
 	end;
 end;
@@ -1177,7 +1210,7 @@ begin
 	begin
 		token := TEndTagToken.Create; //Create a new end tag token
 		//token.TagName := ''; //set its tag name to the empty string
-		FCurrentToken := token;
+		CurrentToken := token;
 		Reconsume(tsScriptDataEndTagNameState); //Reconsume in the script data end tag name state.
 	end
 	else
@@ -1218,7 +1251,7 @@ begin
 		//U+0020 SPACE
 
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 			SetState(tsBeforeAttributeNameState) //switch to the before attribute name state.
 		else
 			AnythingElse; //treat it as per the "anything else" entry below.
@@ -1226,7 +1259,7 @@ begin
 	else if ch = $002F then //U+002F SOLIDUS (/)
 	begin
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 			SetState(tsSelfClosingStartTagState) //switch to the self-closing start tag state.
 		else
 			AnythingElse; //treat it as per the "anything else" entry below.
@@ -1234,7 +1267,7 @@ begin
 	else if ch = $003E then //U+003E GREATER-THAN SIGN (>)
 	begin
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 		begin
 			SetState(tsDataState); //switch to the data state
 			EmitCurrentTagToken; //and emit the current tag token.
@@ -1244,12 +1277,12 @@ begin
 	end
 	else if ch in asciiUpperAlpha then
 	begin
-		(FCurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter + $0020); //Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+		(CurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter + $0020); //Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
 		AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
 	end
 	else if ch in asciiLowerAlpha then
 	begin
-		(FCurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter); //Append the current input character to the current tag token's tag name.
+		(CurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter); //Append the current input character to the current tag token's tag name.
 		AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
 	end
 	else
@@ -1429,7 +1462,7 @@ begin
 	ch := Consume; //consume the next input character
 	if ch in asciiAlpha then
 	begin
-		FCurrentToken := TEndTagToken.Create; //Create a new end tag token,
+		CurrentToken := TEndTagToken.Create; //Create a new end tag token,
 		//set its tag name to the empty string.
 		Reconsume(tsScriptDataEscapedEndTagNameState); //Reconsume in the script data escaped end tag name state.
 	end
@@ -1470,7 +1503,7 @@ begin
 		//U+000C FORM FEED (FF)
 		//U+0020 SPACE
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 			SetState(tsBeforeAttributeNameState) //then switch to the before attribute name state.
 		else
 			AnythingElse; //Otherwise, treat it as per the "anything else" entry below.
@@ -1478,7 +1511,7 @@ begin
 	else if ch = $002F then //U+002F SOLIDUS (/)
 	begin
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 			SetState(tsSelfClosingStartTagState) //then switch to the self-closing start tag state.
 		else
 			AnythingElse; //Otherwise, treat it as per the "anything else" entry below.
@@ -1486,7 +1519,7 @@ begin
 	else if ch = $003E then //U+003E GREATER-THAN SIGN (>)
 	begin
 		//If the current end tag token is an appropriate end tag token,
-		if IsAppropriateEndTag(FCurrentToken as TEndTagToken) then
+		if IsAppropriateEndTag(CurrentToken as TEndTagToken) then
 		begin
 			SetState(tsDataState); //then switch to the data state
 			EmitCurrentTagToken; //and emit the current tag token.
@@ -1496,12 +1529,12 @@ begin
 	end
 	else if ch in asciiUpperAlpha then
 	begin
-		(FCurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter + $0020); //Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
+		(CurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter + $0020); //Append the lowercase version of the current input character (add 0x0020 to the character's code point) to the current tag token's tag name.
 		AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
 	end
 	else if ch in asciiLowerAlpha then
 	begin
-		(FCurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter); //Append the current input character to the current tag token's tag name.
+		(CurrentToken as TTagToken).AppendCharacter(FCurrentInputCharacter); //Append the current input character to the current tag token's tag name.
 		AppendToTemporaryBuffer(FCurrentInputCharacter); //Append the current input character to the temporary buffer.
 	end
 	else
@@ -1801,6 +1834,13 @@ begin
 		AnythingElse;
 end;
 
+destructor THtmlTokenizer.Destroy;
+begin
+	FreeAndNil(FCurrentToken2);
+
+	inherited;
+end;
+
 procedure THtmlTokenizer.DoAfterAttributeNameState;
 var
 	ch: UCS4Char;
@@ -2070,11 +2110,11 @@ begin
 	$0000: //U+0000 NULL
 		begin
 			AddParseError('unexpected-null-character'); //This is an unexpected-null-character parse error.
-			(FCurrentToken as TCommentToken).AppendCharacter($FFFD); //Append a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
+			(CurrentToken as TCommentToken).AppendCharacter($FFFD); //Append a U+FFFD REPLACEMENT CHARACTER character to the comment token's data.
 		end;
 	else
 		//Append the current input character to the comment token's data.
-		(FCurrentToken as TCommentToken).AppendCharacter(FCurrentInputCharacter);
+		(CurrentToken as TCommentToken).AppendCharacter(FCurrentInputCharacter);
 	end;
 end;
 
@@ -2089,7 +2129,7 @@ begin
 		//Consume those two characters,
 		Consume; //"-"
 		Consume; //"-"
-		FCurrentToken := TCommentToken.Create; //create a comment token whose data is the empty string//create a comment token whose data is the empty string,
+		CurrentToken := TCommentToken.Create; //create a comment token whose data is the empty string//create a comment token whose data is the empty string,
 		SetState(tsCommentStartState); //and switch to the comment start state.
 	end
 	else if NextFewCharacters('DOCTYPE', False, False) then
@@ -2139,13 +2179,13 @@ begin
 		newCommentToken.AppendCharacter(Ord('A'));
 		newCommentToken.AppendCharacter(Ord('['));
 
-		FCurrentToken :=  newCommentToken;
+		CurrentToken := newCommentToken;
 		SetState(tsBogusCommentState); //Switch to the bogus comment state.
 	end
 	else
 	begin
 		AddParseError('incorrectly-opened-comment'); //This is an incorrectly-opened-comment parse error.
-		FCurrentToken := TCommentToken.Create; //Create a comment token whose data is the empty string.
+		CurrentToken := TCommentToken.Create; //Create a comment token whose data is the empty string.
 		SetState(tsBogusCommentState); //Switch to the bogus comment state (don't consume anything in the current state).
 	end;
 end;
@@ -2430,7 +2470,8 @@ begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error.
 			token := TDocTypeToken.Create; //Create a new DOCTYPE token.
 			token.ForceQuirks := True; //Set its force-quirks flag to on.
-			EmitToken(token); //Emit the current token.
+			CurrentToken := token;
+			EmitCurrentToken; //Emit the current token.
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
@@ -2465,7 +2506,7 @@ begin
 	begin
 		token := TDoctypeToken.Create; //Create a new DOCTYPE token.
 		token.Name := WideChar(ch + $0020); //Set the token's name to the lowercase version of the current input character (add 0x0020 to the character's code point).
-		FCurrentToken := token;
+		CurrentToken := token;
 		SetState(tsDOCTYPENameState); //Switch to the DOCTYPE name state.
 	end
 	else if ch = $0000 then //U+0000 NULL
@@ -2473,7 +2514,7 @@ begin
 		AddParseError('unexpected-null-character'); //This is an unexpected-null-character parse error.
 		token := TDocTypeToken.Create; //Create a new DOCTYPE token.
 		token.Name := WideChar($FFFD); //Set the token's name to a U+FFFD REPLACEMENT CHARACTER character.
-		FCurrentToken := token;
+		CurrentToken := token;
 		SetState(tsDOCTYPENameState); //Switch to the DOCTYPE name state.
 	end
 	else if ch = $003E then //U+003E GREATER-THAN SIGN (>)
@@ -2481,21 +2522,24 @@ begin
 		AddParseError('missing-doctype-name'); //This is a missing-doctype-name parse error.
 		token := TDocTypeToken.Create; //Create a new DOCTYPE token.
 		token.ForceQuirks := True; //Set its force-quirks flag to on.
+		CurrentToken := token;
 		SetState(tsDataState); //Switch to the data state.
-		EmitToken(token); //Emit the current token.
+		EmitCurrentToken; //Emit the current token.
 	end
 	else if ch = UEOF then //EOF
 	begin
 		AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error.
 		token := TDocTypeToken.Create; //Create a new DOCTYPE token.
 		token.ForceQuirks := True; //Set its force-quirks flag to on.
-		EmitToken(token); //Emit the current token.
+		CurrentToken := token;
+		EmitCurrentToken; //Emit the current token.
 		EmitEndOfFileToken; //Emit an end-of-file token.
 	end
 	else
 	begin
 		token := TDocTypeToken.Create; //Create a new DOCTYPE token.
 		token.Name := UCS4CharToUnicodeString(FCurrentInputCharacter); //Set the token's name to the current input character.
+		CurrentToken := token;
 		SetState(tsDOCTYPENameState); //Switch to the DOCTYPE name state.
 	end;
 end;
@@ -2506,7 +2550,7 @@ var
 
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.55 DOCTYPE name state
@@ -2570,7 +2614,7 @@ begin
 	UEOF:
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error.
-			(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
+			(CurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
 			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
@@ -2609,7 +2653,7 @@ begin
 		begin
 			//Otherwise,
 			AddParseError('invalid-character-sequence-after-doctype-name'); //this is an invalid-character-sequence-after-doctype-name parse error.
-			(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
+			(CurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
 			Reconsume(tsBogusDOCTYPEState); //Reconsume in the bogus DOCTYPE state.
 		end;
 	end;
@@ -2620,7 +2664,7 @@ var
 	ch: UCS4Char;
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.57 After DOCTYPE public keyword state
@@ -2649,20 +2693,20 @@ begin
 	$003E: //U+003E GREATER-THAN SIGN (>)
 		begin
 			AddParseError('missing-doctype-public-identifier'); // This is a missing-doctype-public-identifier parse error.
-			(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
+			(CurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
 			SetState(tsDataState); //Switch to the data state.
 			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	UEOF:
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error.
-			(FCurrentToken as TDocTypeToken).ForceQuirks := True; // Set the current DOCTYPE token's force-quirks flag to on.
+			(CurrentToken as TDocTypeToken).ForceQuirks := True; // Set the current DOCTYPE token's force-quirks flag to on.
 			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
 		AddParseError('missing-quote-before-doctype-public-identifier'); //This is a missing-quote-before-doctype-public-identifier parse error.
-		(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
+		(CurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
 		Reconsume(tsBogusDOCTYPEState); //Reconsume in the bogus DOCTYPE state.
 	end;
 end;
@@ -2673,7 +2717,7 @@ var
 
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.58 Before DOCTYPE public identifier state
@@ -2700,20 +2744,20 @@ begin
 	$003E: //U+003E GREATER-THAN SIGN (>)
 		begin
 			AddParseError('missing-doctype-public-identifier'); //This is a missing-doctype-public-identifier parse error.
-			(FCurrentToken as TDocTypeToken).ForceQuirks := True; // the current DOCTYPE token's force-quirks flag to on.
+			(CurrentToken as TDocTypeToken).ForceQuirks := True; // the current DOCTYPE token's force-quirks flag to on.
 			SetState(tsDataState); //Switch to the data state.
 			EmitCurrentDocTypeToken; //Emit the current DOCTYPE token.
 		end;
 	UEOF:
 		begin
 			AddParseError('eof-in-doctype'); //This is an eof-in-doctype parse error.
-			(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
+			(CurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
 			EmitCurrentDocTypeToken; // Emit the current DOCTYPE token.
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
 		AddParseError('missing-quote-before-doctype-public-identifier'); //This is a missing-quote-before-doctype-public-identifier parse error.
-		(FCurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
+		(CurrentToken as TDocTypeToken).ForceQuirks := True; //Set the current DOCTYPE token's force-quirks flag to on.
 		Reconsume(tsBogusDOCTYPEState); //Reconsume in the bogus DOCTYPE state.
 	end;
 end;
@@ -2724,7 +2768,7 @@ var
 
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.59 DOCTYPE public identifier (double-quoted) state
@@ -2766,7 +2810,7 @@ var
 
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.60 DOCTYPE public identifier (single-quoted) state
@@ -2807,7 +2851,7 @@ var
 
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 
 begin
@@ -2858,7 +2902,7 @@ var
 	ch: UCS4Char;
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.62 Between DOCTYPE public and system identifiers state
@@ -2907,7 +2951,7 @@ var
 
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.63 After DOCTYPE system keyword state
@@ -2960,7 +3004,7 @@ var
 
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.64 Before DOCTYPE system identifier state
@@ -3011,7 +3055,7 @@ var
 
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.65 DOCTYPE system identifier (double-quoted) state
@@ -3051,7 +3095,7 @@ var
 	ch: UCS4Char;
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.66 DOCTYPE system identifier (single-quoted) state
@@ -3091,7 +3135,7 @@ var
 	ch: UCS4Char;
 	function dt: TDocTypeToken;
 	begin
-		Result := FCurrentToken as TDocTypeToken;
+		Result := CurrentToken as TDocTypeToken;
 	end;
 begin
 	//13.2.5.67 After DOCTYPE system identifier state
@@ -3245,6 +3289,12 @@ begin
 end;
 
 procedure THtmlTokenizer.DoNamedCharacterReferenceState;
+var
+	ch: UCS4Char;
+	name: UnicodeString;
+	nMatches: Integer;
+	entity: TEntityInfo;
+	i: Integer;
 begin
 	//13.2.5.73 Named character reference state
 	//https://html.spec.whatwg.org/multipage/parsing.html#named-character-reference-state
@@ -3255,35 +3305,66 @@ begin
 	of the named character references table.
 	Append each character to the temporary buffer when it's consumed.
 }
-	//TODO: this whole thing
-(*
-	consumed := '';
-	match := False;
-	repeat
-		ch := Consume;
-		if ch > $FFFF then
-			Break;
-		match :=
 
-	If there is a match
-		If the character reference was consumed as part of an attribute,
+	name := '';
+	ch := Consume;
+	nMatches := 0;
+	entity := Default_EntityInfo;
+
+	while ch <> UEOF do
+	begin
+		AppendToTemporaryBuffer(ch);
+		name := name + UCS4CharToUnicodeString(ch);
+		nMatches :=  FindMatchingEntity(name, {out}entity);
+		if nMatches > 1 then
+		begin
+			//Still multiple matches, keep going
+			ch := Consume;
+			Continue;
+		end;
+
+		if nMatches <= 1 then
+			Break;
+	end;
+
+	if (nMatches = 1) then //If there is a match
+	begin
+		if false {the character reference was consumed as part of an attribute,
 		and the last character matched is not a U+003B SEMICOLON character (;),
 		and the next input character is either a U+003D EQUALS SIGN character (=) or
-		an ASCII alphanumeric, then, for historical reasons, flush code points consumed as a character reference and switch to the return state.
+		an ASCII alphanumeric} then
+		begin
+			//for historical reasons,
+			FlushCodePointsConsumed; //flush code points consumed as a character reference
+			SetState(FReturnState2); //and switch to the return state.
+			Exit;
+		end;
 
-		Otherwise:
-			1. If the last character matched is not a U+003B SEMICOLON character (;),
-				then this is a missing-semicolon-after-character-reference parse error.
-			2. Set the temporary buffer to the empty string.
-				Append one or two characters corresponding to the character reference name
-				(as given by the second column of the named character references table)
-				to the temporary buffer.
-			3. Flush code points consumed as a character reference.
-				Switch to the return state.
-	Otherwise
-		Flush code points consumed as a character reference.
-		Switch to the ambiguous ampersand state.
-*)
+		//1. If the last character matched is not a U+003B SEMICOLON character (;),
+		if name[Length(name)] <> ';' then
+		begin
+			//then this is a missing-semicolon-after-character-reference parse error.
+			AddParseError('missing-semicolon-after-character-reference');
+		end;
+
+		//2. Set the temporary buffer to the empty string.
+		SetLength(FTemporaryBuffer, 0);
+
+		// Append one or two characters corresponding to the character reference name
+		// (as given by the second column of the named character references table)
+		// to the temporary buffer.
+		for i := 0 to High(entity.Code) do
+			AppendToTemporaryBuffer(entity.Code[i]);
+
+		// 3. Flush code points consumed as a character reference.
+		FlushCodePointsConsumed;
+		SetState(FReturnState2); // Switch to the return state.
+	end
+	else
+	begin
+		FlushCodePointsConsumed; // Flush code points consumed as a character reference.
+		SetState(tsAmbiguousAmpersandState); // Switch to the ambiguous ampersand state.
+	end;
 end;
 
 procedure THtmlTokenizer.DoAmbiguousAmpersandState;
@@ -3478,37 +3559,68 @@ procedure THtmlTokenizer.EmitCharacter(const Character: UCS4Char);
 var
 	token: TCharacterToken;
 begin
-	//Emit a character token.
+	if FDelayedEmitToken <> nil then
+	begin
+		//Add to the existing delayed character token
+		FDelayedEmittoken.AppendCharacter(Character);
+		Exit;
+	end;
+
+	//Emit a character token (delayed)
 	token := TCharacterToken.Create;
-	token.Data := Character;
+	token.AppendCharacter(Character);
+
+	FDelayedEmitToken := token; //we want to coalesce text tokens up
+end;
+
+procedure THtmlTokenizer.EmitCurrentCommentToken;
+var
+	token: THtmlToken;
+begin
+	//Emit the current token - which is assumed to be a Comment token.
+	token := ExtractCurrentToken;
+
+	EmitToken(token as TCommentToken);
+end;
+
+procedure THtmlTokenizer.EmitCurrentTagToken;
+var
+	token: THtmlToken;
+begin
+	//Emit the current token - which is assumed to be a either a StartTag or EndTag token.
+	token := ExtractCurrentToken;
+	if token = nil then
+		raise Exception.Create('Attempting to emit current tag token when the current token is nil');
+
+	if token is TStartTagToken then
+		EmitStartTag(token as TStartTagToken)
+	else if token is TEndTagToken then
+		EmitEndTag(token as TEndTagToken)
+	else
+		raise Exception.CreateFmt('EmitCurrentTagToken expected the current token to be a tag (but was %s)', [token.ClassName]);
+end;
+
+procedure THtmlTokenizer.EmitCurrentToken;
+var
+	token: THtmlToken;
+begin
+	token := ExtractCurrentToken;
+	if token = nil then
+		raise Exception.Create('Attempting to emit current token when the current token is nil');
 
 	EmitToken(token);
 end;
 
-procedure THtmlTokenizer.EmitCurrentCommentToken;
-begin
-	//Emit the current token - which is assumed to be a Comment token.
-	EmitToken(FCurrentToken as TCommentToken);
-end;
-
-procedure THtmlTokenizer.EmitCurrentTagToken;
-begin
-	//Emit the current token - which is assumed to be a either a StartTag or EndTag token.
-	if FCurrentToken = nil then
-		raise Exception.Create('EmitCurrentTagToken expected a current token');
-
-	if FCurrentToken is TStartTagToken then
-		EmitStartTag
-	else if FCurrentToken is TEndTagToken then
-		EmitEndTag
-	else
-		raise Exception.CreateFmt('EmitCurrentTagToken expected the current token to be a tag (was %s)', [FCurrentToken.ClassName]);
-end;
-
 procedure THtmlTokenizer.EmitCurrentDocTypeToken;
+var
+	token: THtmlToken;
 begin
 	//Emit the current token - which is assumed to be a DOCTYPE token.
-	EmitToken(FCurrentToken as TDocTypeToken);
+	token := ExtractCurrentToken;
+	if token = nil then
+		raise Exception.Create('Attempting to emit current DOCTYPE token when the current token is nil');
+
+	EmitToken(token as TDocTypeToken);
 end;
 
 procedure THtmlTokenizer.EmitEndOfFileToken;
@@ -3518,45 +3630,39 @@ begin
 	//Emit an End Of File token.
 	token := TEndOfFileToken.Create;
 	EmitToken(token);
+   FEOF := True;
 end;
 
-procedure THtmlTokenizer.EmitEndTag;
-var
-	token: TEndTagToken;
+procedure THtmlTokenizer.EmitEndTag(EndTag: TEndTagToken);
 begin
 {
 	Emit the current token - which is assumed to be a EndTag token.
 }
-	token := FCurrentToken as TEndTagToken;
-	if token = nil then
-		raise Exception.Create('Cannot emit end tag: CurrentToken is nil');
+	if EndTag = nil then
+		raise Exception.Create('Attempt to emit nil End Tag token');
 
 	//When an end tag token is emitted with attributes,
 	//that is an end-tag-with-attributes parse error.
-	if token.Attributes.Count > 0 then
+	if Length(EndTag.Attributes) > 0 then
 		AddParseError('end-tag-with-attributes');
 
 	//When an end tag token is emitted with its self-closing flag set,
 	//that is an end-tag-with-trailing-solidus parse error.
-	if token.SelfClosing then
+	if EndTag.SelfClosing then
 		AddParseError('end-tag-with-trailing-solidus');
 
-	EmitToken(token);
+	EmitToken(EndTag);
 end;
 
-procedure THtmlTokenizer.EmitStartTag;
-var
-	startTag: TStartTagToken;
+procedure THtmlTokenizer.EmitStartTag(StartTag: TStartTagToken);
 begin
 {
 	Emit the current token - which is assumed to be a StartTag token.
 }
-	if not (FCurrentToken is TStartTagToken) then
-		raise EConvertError.CreateFmt('Cannot cast %s object to type TStartTagToken', [FCurrentToken.ClassName]);
+	if StartTag = nil then
+		raise Exception.Create('Attempt to emit nil Start Tag token');
 
-	startTag := FCurrentToken as TStartTagToken;
 	startTag.FinalizeAttributeName;
-	EmitToken(startTag);
 
 {
 	https://html.spec.whatwg.org/multipage/parsing.html#acknowledge-self-closing-flag
@@ -3569,12 +3675,36 @@ begin
 	//I suppose there could also be some sort of StartTag.AcknowledgeSelfClosingFlag
 	if startTag.SelfClosing = True then
 		AddParseError('non-void-html-element-start-tag-with-trailing-solidus');
+
+	EmitToken(startTag);
 end;
 
 procedure THtmlTokenizer.EmitToken(const AToken: THtmlToken);
+var
+	token: TCharacterToken;
 begin
+	if AToken = nil then
+		raise Exception.Create('AToken passed to EmitToken is nil');
+
+	if FDelayedEmitToken <> nil then
+	begin
+		//delayed send
+		token := FDelayedEmitToken;
+		FDelayedEmitToken := nil; //Clear it out, otherwise we would double-emit, and get into AV territory
+		EmitToken(token);
+	end;
+
+	if (FLogFlags and LOG_TOKENIZER_EMITTOKEN) <> 0 then
+		LogFmt('[[== %s %s ==]]', [AToken.ClassName, AToken.Description]);
+
 	if Assigned(FOnToken) then
 		FOnToken(Self, AToken);
+end;
+
+function THtmlTokenizer.ExtractCurrentToken: THtmlToken;
+begin
+	Result := FCurrentToken2;
+   FCurrentToken2 := nil;
 end;
 
 procedure THtmlTokenizer.FlushCodePointsConsumed;
@@ -3599,21 +3729,37 @@ begin
 	else
 	begin
 {
-		TODO: Implementation question. It says append all the character to the current attribute vulue,
-		but it says otherwise emit the code point (singular) as a character token.
+		TODO: Implementation question. It says append all the character to the current attribute value,
+		but it also says otherwise emit the code point (singular) as a character token.
 		Am i only emitting one character from the Temporary buffer?
 		Am i emitting all characters from the temporary buffer?
 		Or am i only to emit the *"current input character"*
+
+		Answer: What it's trying to say is that each character that is currently
+		in the temporary buffer is going to be gathered up,
+		and spit into the waiting mouth of either:
+
+			- attr.Value += ch
+			- EmitCharacter(ch)
 }
 		for i := 0 to Length(FTemporaryBuffer)-1 do
-			CurrentTagToken.CurrentAttributeValue := CurrentTagToken.CurrentAttributeValue + UCS4CharToUnicodeString(FTemporaryBuffer[i]);
-
+			EmitCharacter(FTemporaryBuffer[i]);
 	end;
+end;
+
+procedure THtmlTokenizer.FlushDelayedTokens;
+var
+	token: THtmlToken;
+begin
+	token := FDelayedEmitToken;
+	FDelayedEmitToken := nil;
+	if token <> nil then
+		EmitToken(token);
 end;
 
 function THtmlTokenizer.GetCurrentTagToken: TTagToken;
 begin
-	Result := FCurrentToken as TTagToken;
+	Result := CurrentToken as TTagToken;
 end;
 
 function THtmlTokenizer.GetNext: UCS4Char;
@@ -3624,7 +3770,6 @@ begin
 	if not res then
 	begin
 		Result := UEOF;
-		FEOF := True;
 		Exit;
 	end;
 end;
@@ -3634,6 +3779,11 @@ begin
 	FStream := nil;
 	FState2 := tsDataState; //The state machine must start in the data state.
 	FCurrentInputCharacter := MaxInt; //UCS4 doesn't allow negative, so we use $FFFFFFFF
+	FLogFlags := 0;
+//		FLogFlags := FLogFlags or 	LOG_TOKENIZER_STATECHANGE;
+//		FLogFlags := FLogFlags or 	LOG_TOKENIZER_EMITTOKEN;
+//		FLogFlags := FLogFlags or 	LOG_TOKENIZER_PARSEERROR;
+		FLogFlags := FLogFlags or $FFFFFFFF;
 end;
 
 function THtmlTokenizer.IsAppropriateEndTag(const EndTagToken: TEndTagToken): Boolean;
@@ -3691,7 +3841,8 @@ procedure THtmlTokenizer.SetState(const State: TTokenizerState);
 begin
 	FState2 := State;
 
-	LogFmt('    ==> %s', [TypInfo.GetEnumName(TypeInfo(TTokenizerState), Ord(State))]);
+	if (FLogFlags and LOG_TOKENIZER_STATECHANGE) <> 0 then
+		LogFmt('    ==> %s', [TypInfo.GetEnumName(TypeInfo(TTokenizerState), Ord(State))]);
 end;
 
 function THtmlTokenizer.TemporaryBufferIs(const Value: UnicodeString): Boolean;
@@ -3701,6 +3852,19 @@ begin
 	tb := UCS4StringToUnicodeString(FTemporaryBuffer);
 
 	Result := SameText(tb, Value); //TODO: Implementor's question: should this be case sensitive?
+end;
+
+procedure THtmlTokenizer.SetCurrentToken(const Value: THtmlToken);
+begin
+	if Value = nil then
+		raise Exception.Create('Do not set CurrentToken to nil. Use ExtractCurrentToken');
+
+	if FCurrentToken2 <> nil then
+	begin
+		LogFmt('Freeing existing current token "s"', [FCurrentToken2.GetDescription]);
+		FreeAndNil(FCurrentToken2);
+	end;
+	FCurrentToken2 := Value;
 end;
 
 procedure THtmlTokenizer.SetReturnState(const State: TTokenizerState);
@@ -4001,6 +4165,11 @@ begin
 	Self.TokenType := ATokenType;
 end;
 
+destructor THtmlToken.Destroy;
+begin
+	inherited;
+end;
+
 function THtmlToken.GetDescription: string;
 begin
 	Result := 'Base Token';
@@ -4010,20 +4179,12 @@ end;
 
 procedure TCommentToken.AppendCharacter(const ch: UCS4Char);
 begin
-	if ch > $FFFF then
-		raise Exception.CreateFmt('Attempt to add extended character (%d) to comment token', [ch]);
-
-	UCS4StrCat({var}FData, ch);
+	FData := FData + UCS4CharToUnicodeString(ch);
 end;
 
 constructor TCommentToken.Create;
 begin
 	inherited Create(ttComment);
-end;
-
-function TCommentToken.GetDataString: UnicodeString;
-begin
-	Result := UCS4ToUnicodeString(FData);
 end;
 
 function TCommentToken.GetDescription: string;
@@ -4033,27 +4194,24 @@ end;
 
 { TCharacterToken }
 
+procedure TCharacterToken.AppendCharacter(const ch: UCS4Char);
+begin
+	FData := FData + UCS4CharToUnicodeString(ch);
+end;
+
 constructor TCharacterToken.Create;
 begin
 	inherited Create(ttCharacter);
 end;
 
-function TCharacterToken.GetDataString: UnicodeString;
-var
-	s: UCS4String;
-begin
-	SetLength(s, 1);
-	s[0] := Self.Data;
-	Result := UCS4StringToUnicodeString(s);
-end;
-
 function TCharacterToken.GetDescription: string;
 var
 	s: string;
-	ch: Word;
+//	ch: Word;
 begin
-	s := Self.DataString;
+	s := Self.Data;
 
+(*
 	if Length(s) = 1 then
 	begin
 		ch := Word(s[1]);
@@ -4099,6 +4257,7 @@ begin
 
 		s[1] := WideChar(ch);
 	end;
+*)
 
 	Result := '#character: '+s;
 end;
@@ -4109,7 +4268,6 @@ constructor TEndOfFileToken.Create;
 begin
 	inherited Create(ttEndOfFile);
 end;
-
 
 function TEndOfFileToken.GetDescription: string;
 begin
@@ -4133,7 +4291,7 @@ begin
 		if pcbRead <> nil then
 			pcbRead^ := bytesRead;
 
-		//FIX: IStream must return S_FALSE if the number of bytes read is less than the number of bytes requested in cb.
+		//BUGFIX: IStream must return S_FALSE if the number of bytes read is less than the number of bytes requested in cb.
 		if bytesRead < cb then
 		begin
 			Result := S_FALSE;
@@ -4142,7 +4300,7 @@ begin
 
 		Result := S_OK;
 	except
-		Result := E_FAIL; //And we don't return S_FALSE (success) for an error, we return an error.
+		Result := E_FAIL; //BUGFIX: Don't return success (S_FALSE) for an error; return an error!
 	end;
 end;
 
@@ -4175,6 +4333,11 @@ begin
   end;
 
   SetString(Result, PChar(Tmp), CharCount + 1);
+end;
+
+function UCS4StringToUnicodeString(const S: UCS4String): UnicodeString;
+begin
+   Result := UCS4ToUnicodeString(S);
 end;
 
 procedure UCS4StrCat(var Dest: UCS4String; const Source: UCS4Char);
@@ -4271,12 +4434,19 @@ end;
 
 { TTagToken }
 
+procedure TTagToken.AddAttribute(Name, Value: UnicodeString);
+var
+	n: Integer;
+begin
+	n := Length(FAttributes);
+	SetLength(FAttributes, n+1);
+	FAttributes[n].Name := Name;
+	FAttributes[n].Value := Value;
+end;
+
 procedure TTagToken.AppendCharacter(const ch: UCS4Char);
 begin
-	if ch > $FFFF then
-		raise Exception.CreateFmt('Attempt to add extended character (%d) to tag token', [ch]);
-
-	UCS4StrCat(FData, ch);
+	FTagName := FTagName + UCS4CharToUnicodeString(ch);
 end;
 
 constructor TTagToken.Create(ATokenType: THtmlTokenType);
@@ -4284,12 +4454,12 @@ begin
 	inherited Create(ATokenType);
 
 	FSelfClosing := False; //self-closing flag must be unset (its other state is that it be set)
-	FAttributes := TList.Create; //and its attributes list must be empty.
+	SetLength(FAttributes, 0); //and its attributes list must be empty.
 end;
 
 destructor TTagToken.Destroy;
 begin
-	FreeAndNil(FAttributes);
+	SetLength(FAttributes, 0);
 
 	inherited;
 end;
@@ -4315,16 +4485,11 @@ begin
 	<section id="lblTitle" class="blue even primary">
 }
 	s := '<'+Self.TagName;
-	for i := 0 to Self.Attributes.Count-1 do
-		s := s+' key="value"';
+	for i := 0 to High(FAttributes) do
+		s := s+' '+FAttributes[i].Name+'="'+FAttributes[i].Value+'"';
 	s := s+'>';
 
 	Result := s;
-end;
-
-function TTagToken.GetTagName: UnicodeString;
-begin
-	Result := UCS4ToUnicodeString(FData);
 end;
 
 procedure TTagToken.NewAttribute;
