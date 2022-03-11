@@ -138,6 +138,20 @@ uses
 
 { THtmlParser }
 
+constructor THtmlParser.Create;
+begin
+	inherited Create;
+
+	FInsertionMode := imInitial; //Initially, the insertion mode is "initial".
+	FOriginalInsertionMode := imInitial;
+	FActiveFormattingElements := TElementStack.Create;
+	FOpenElements := TElementStack.Create;
+	FScripting := False;
+
+	FHead := nil;
+	FForm := nil;
+end;
+
 procedure THtmlParser.AddParseError(const s: UnicodeString);
 begin
 	Log('Parse-Error: '+s);
@@ -160,78 +174,131 @@ begin
 	AddParseError(s+' '+ErrorMessage);
 end;
 
-constructor THtmlParser.Create;
+procedure THtmlParser.AddNotImplementedParseError(const InsertionModeHandlerName: string);
 begin
-	inherited Create;
-
-	FInsertionMode := imInitial; //Initially, the insertion mode is "initial".
-	FOriginalInsertionMode := imInitial;
-	FActiveFormattingElements := TElementStack.Create;
-	FOpenElements := TElementStack.Create;
-   FScripting := False;
-
-	FHead := nil;
-	FForm := nil;
+	AddParseError('not-implemented-'+InsertionModeHandlerName);
+	raise ENotImplemented.Create(InsertionModeHandlerName);
 end;
 
-function THtmlParser.CreateElementForToken(const Node: THtmlToken): TElement;
+procedure THtmlParser.Log(const s: string);
 begin
-	//https://html.spec.whatwg.org/multipage/parsing.html#create-an-element-for-the-token
+	OutputDebugString(PChar(s));
+end;
+
+class function THtmlParser.Parse(const HtmlStr: TDomString): TDocument;
+var
+	parser: THtmlParser;
+begin
+	parser := THtmlParser.Create;
+	try
+		parser.Scripting := False;
+		Result := parser.ParseString(HtmlStr);
+	finally
+		parser.Free;
+	end;
+end;
+
+function THtmlParser.ParseString(const htmlStr: TDomString): TDocument;
+begin
+	FTokenizer := THtmlTokenizer.Create(HtmlStr);
+	FTokenizer.OnToken := ProcessToken;
+
+	if FHtmlDocument <> nil then
+		FreeAndNil(FHtmlDocument);
+
+	FHtmlDocument := TDocument.Create;
+	FTokenizer.Parse;
+	Result := FHtmlDocument;
+end;
+
+procedure THtmlParser.ProcessToken(Sender: TObject; AToken: THtmlToken);
+begin
+	if AToken = nil then
+		raise EArgumentNilException.Create('AToken');
+
+	Log('    ==> Emitted token '+AToken.Description);
+
+	ProcessNodeAccordingToInsertionMode(AToken, FInsertionMode);
+end;
+
+procedure THtmlParser.ProcessNodeAccordingToInsertionMode(const Node: THtmlToken; AInsertionMode: TInsertionMode);
+begin
+	case AInsertionMode of
+	imInitial:					DoInitialInsertionMode(Node); 				//"initial"
+	imBeforeHtml:				DoBeforeHtmlInsertionMode(Node); 			//"before html"
+	imBeforeHead:				DoBeforeHeadInsertionMode(Node); 			//"before head"
+	imInHead:					DoInHeadInsertionMode(Node); 					//"in head"
+	imInHeadNoscript:			DoInHeadNoscriptInsertionMode(Node);		//"in head no script"
+	imAfterHead:				DoAfterHeadInsertionMode(Node);				//"after head",
+	imInBody:					DoInBodyInsertionMode(Node);					//"in body",
+	imText:						DoTextInsertionMode(Node);						//"text",
+	imInTable:					DoInTableInsertionMode(Node);					//"in table",
+	imInTableText:				DoInTableTextInsertionMode(Node);			//"in table text",
+	imInCaption:				DoInCaptionInsertionMode(Node);				//"in caption",
+	imInColumnGroup:			DoInColumnGroupInsertionMode(Node);			//"in column group",
+	imInTableBody:				DoInTableBodyInsertionMode(Node);			//"in table body",
+	imInRow:						DoInRowInsertionMode(Node);					//"in row",
+	imInCell:					DoInCellInsertionMode(Node);					//"in cell",
+	imInSelect:					DoInSelectInsertionMode(Node);				//"in select",
+	imInSelectInTable:		DoInSelectInTableInsertionMode(Node);		//"in select in table",
+	imInTemplate:				DoInTemplateInsertionMode(Node);				//"in template",
+	imAfterBody:				DoAfterBodyInsertionMode(Node);			  	//"after body",
+	imInFrameset:				DoInFramesetInsertionMode(Node);				//"in frameset",
+	imAfterFrameset:			DoAfterFramesetInsertionMode(Node);			//"after frameset",
+	imAfterAfterBody:			DoAfterAfterBodyInsertionMode(Node);		//"after after body",
+	imAfterAfterFrameset:  	DoAfterAfterFrameseInsertionMode(Node);	//"after after frameset"
+	else
+		raise Exception.Create('Unknown insertion mode');
+	end;
+end;
+
+procedure THtmlParser.SetInsertionMode(const Mode: TInsertionMode);
+begin
 {
-	TODO: No shit
-When the steps below require the UA to create an element for a token in a particular given namespace and with a particular intended parent, the UA must run the following steps:
+	The insertion mode is a state variable that controls the primary operation of the tree construction stage.
 
-If the active speculative HTML parser is not null, then return the result of creating a speculative mock element given given namespace, the tag name of the given token, and the attributes of the given token.
+	Initially, the insertion mode is "initial". It can change to
 
-Otherwise, optionally create a speculative mock element given given namespace, the tag name of the given token, and the attributes of the given token.
+	- "before html"
+	- "before head"
+	- "in head"
+	- "in head noscript"
+	- "after head"
+	- "in body"
+	- "text"
+	- "in table"
+	- "in table text"
+	- "in caption"
+	- "in column group"
+	- "in table body"
+	- "in row"
+	- "in cell"
+	- "in select"
+	- "in select in table"
+	- "in template"
+	- "after body",
+	- "in frameset",
+	- "after frameset",
+	- "after after body",
+	- "after after frameset"
 
-The result is not used. This step allows for a speculative fetch to be initiated from non-speculative parsing. The fetch is still speculative at this point, because, for example, by the time the element is inserted, intended parent might have been removed from the document.
+	during the course of the parsing, as described in the tree construction stage.
 
-Let document be intended parent's node document.
+	The insertion mode affects how tokens are processed and whether CDATA sections are supported.
 
-Let local name be the tag name of the token.
+	Several of these modes, namely "in head", "in body", "in table", and "in select", are special,
+	in that the other modes defer to them at various times.
 
-Let is be the value of the "is" attribute in the given token, if such an attribute exists, or null otherwise.
-
-Let definition be the result of looking up a custom element definition given document, given namespace, local name, and is.
-
-If definition is non-null and the parser was not created as part of the HTML fragment parsing algorithm, then let will execute script be true. Otherwise, let it be false.
-
-If will execute script is true, then:
-
-Increment document's throw-on-dynamic-markup-insertion counter.
-
-If the JavaScript execution context stack is empty, then perform a microtask checkpoint.
-
-Push a new element queue onto document's relevant agent's custom element reactions stack.
-
-Let element be the result of creating an element given document, localName, given namespace, null, and is. If will execute script is true, set the synchronous custom elements flag; otherwise, leave it unset.
-
-This will cause custom element constructors to run, if will execute script is true. However, since we incremented the throw-on-dynamic-markup-insertion counter, this cannot cause new characters to be inserted into the tokenizer, or the document to be blown away.
-
-Append each attribute in the given token to element.
-
-This can enqueue a custom element callback reaction for the attributeChangedCallback, which might run immediately (in the next step).
-
-Even though the is attribute governs the creation of a customized built-in element, it is not present during the execution of the relevant custom element constructor; it is appended in this step, along with all other attributes.
-
-If will execute script is true, then:
-
-Let queue be the result of popping from document's relevant agent's custom element reactions stack. (This will be the same element queue as was pushed above.)
-
-Invoke custom element reactions in queue.
-
-Decrement document's throw-on-dynamic-markup-insertion counter.
-
-If element has an xmlns attribute in the XMLNS namespace whose value is not exactly the same as the element's namespace, that is a parse error. Similarly, if element has an xmlns:xlink attribute in the XMLNS namespace whose value is not the XLink Namespace, that is a parse error.
-
-If element is a resettable element, invoke its reset algorithm. (This initializes the element's value and checkedness based on the element's attributes.)
-
-If element is a form-associated element and not a form-associated custom element, the form element pointer is not null, there is no template element on the stack of open elements, element is either not listed or doesn't have a form attribute, and the intended parent is in the same tree as the element pointed to by the form element pointer, then associate element with the form element pointed to by the form element pointer and set element's parser inserted flag.
-
-Return element.}
-	Result := Document.createElement((Node as TStartTagToken).TagName);
+	When the algorithm below says that the user agent is to do something
+	"using the rules for the m insertion mode", where m is one of these modes,
+	the user agent must use the rules described under the m insertion mode's section,
+	but must leave the insertion mode unchanged unless the rules in m themselves
+	switch the insertion mode to a new value.
+}
+	FInsertionMode := Mode;
 end;
+
+//*** Insertion Mode Handlers ***
 
 procedure THtmlParser.DoInitialInsertionMode(Node: THtmlToken);
 var
@@ -245,7 +312,7 @@ begin
 	//It is initially false.
 
 	//A character token that is one of U+0009 CHARACTER TABULATION, U+000A LINE FEED (LF), U+000C FORM FEED (FF), U+000D CARRIAGE RETURN (CR), or U+0020 SPACE
-	if (node is TCharacterToken) and ((node as TCharacterToken).Data in [$0009, $000A, $000C, $000D, $0020]) then
+	if (node is TCharacterToken) and TextIs((node as TCharacterToken).Data, [#$0009, #$000A, #$000C, #$000D, #$0020]) then
 	begin
 		//ignore the token
 	end
@@ -385,7 +452,7 @@ begin
 		//Insert a comment as the last child of the Document object.
 		InsertComment(Node, Document);
 	end
-	else if (Node is TCharacterToken) and ((Node as TCharacterToken).Data in [$0009, $000A, $000C, $000D, $0020]) then
+	else if (Node is TCharacterToken) and TextIs((Node as TCharacterToken).Data, [#$0009, #$000A, #$000C, #$000D, #$0020]) then
 	begin
 		//Ignore the token
 	end
@@ -397,17 +464,6 @@ begin
 
 		SetInsertionMode(imBeforeHead);
 	end;
-end;
-
-procedure THtmlParser.AddMarkerToActiveFormattingElements;
-begin
-	AddNotImplementedParseError('AddMarkerToActiveFormattingElements');
-end;
-
-procedure THtmlParser.AddNotImplementedParseError(const InsertionModeHandlerName: string);
-begin
-	AddParseError('not-implemented-'+InsertionModeHandlerName);
-	raise ENotImplemented.Create(InsertionModeHandlerName);
 end;
 
 procedure THtmlParser.DoBeforeHeadInsertionMode(Node: THtmlToken);
@@ -455,12 +511,8 @@ Reprocess the current token.
 end;
 
 procedure THtmlParser.DoInHeadInsertionMode(Node: THtmlToken);
-var
-	st: TStartTagToken;
 
 	function IsStartTag(const List: array of UnicodeString): Boolean;
-	var
-		i: Integer;
 	begin
 		if not (Node is TStartTagToken) then
 		begin
@@ -478,8 +530,6 @@ var
 	end;
 
 	function IsEndTag(const List: array of UnicodeString): Boolean;
-	var
-		i: Integer;
 	begin
 		if not (Node is TEndTagToken) then
 		begin
@@ -532,12 +582,17 @@ Switch the insertion mode to "text".
 }
 		raise ENotImplemented.Create('InsertScriptElemetn');
 	end;
+
+	function st: TStartTagToken;
+	begin
+		Result := (node as TStartTagToken);
+	end;
 begin
 	//13.2.6.4.4 The "in head" insertion mode
 	//https://html.spec.whatwg.org/multipage/parsing.html#parsing-main-inhead
 	AddNotImplementedParseError('DoInHeadInsertionMode');
 
-	if (node is TCharacterToken) and ((node as TCharacterToken).Data in [$0009, $000A, $000C, $000D, $0020]) then
+	if (node is TCharacterToken) and TextIs((node as TCharacterToken).Data, [#$0009, #$000A, #$000C, #$000D, #$0020]) then
 	begin
 		//A character token that is one of U+0009 CHARACTER TABULATION, U+000A LINE FEED (LF), U+000C FORM FEED (FF), U+000D CARRIAGE RETURN (CR), or U+0020 SPACE
 		InsertCharacter(Node); //Insert the character.
@@ -567,8 +622,8 @@ begin
 		FOpenElements.Pop;
 
 		 //Acknowledge the token's self-closing flag, if it is set.
-		if st.SelfClosing then
-			st.AcknowledgeSelfClosing;
+		if (node as TStartTagToken).SelfClosing then
+			(node as TStartTagToken).AcknowledgeSelfClosing;
 	end
 	else if IsStartTag(['meta']) then
 	begin
@@ -576,7 +631,8 @@ begin
 		InsertAnHtmlElement(node); //Insert an HTML element for the token
 
 		FOpenElements.Pop; //Immediately pop the current node off the stack of open elements.
-		st.AcknowledgeSelfClosing; // Acknowledge the token's self-closing flag, if it is set.
+		if st.SelfClosing then
+			st.AcknowledgeSelfClosing; // Acknowledge the token's self-closing flag, if it is set.
 
 		//TODO: If the active speculative HTML parser is null, then:
 {		if FActiveSpeculationHtmlParser = nil then
@@ -598,7 +654,7 @@ begin
 	else if IsStartTag(['title']) then
 	begin
 		//A start tag whose tag name is "title"
-		GenericParsingAlgorithm(node, tsRawTextState); //Follow the generic RCDATA element parsing algorithm.
+		GenericRCDATAElementParsingAlgorithm(node, nil); //Follow the generic RCDATA element parsing algorithm.
 	end
 	else if (Scripting and (isStartTag(['noscript'])))
 				or IsStartTag(['noframes', 'style']) then
@@ -2345,76 +2401,68 @@ Insert the newly created node at the adjusted insertion location.
 }
 end;
 
-procedure THtmlParser.Log(const s: string);
+function THtmlParser.CreateElementForToken(const Node: THtmlToken): TElement;
 begin
-	OutputDebugString(PChar(s));
+	//https://html.spec.whatwg.org/multipage/parsing.html#create-an-element-for-the-token
+{
+	TODO: No shit
+When the steps below require the UA to create an element for a token in a particular given namespace and with a particular intended parent, the UA must run the following steps:
+
+If the active speculative HTML parser is not null, then return the result of creating a speculative mock element given given namespace, the tag name of the given token, and the attributes of the given token.
+
+Otherwise, optionally create a speculative mock element given given namespace, the tag name of the given token, and the attributes of the given token.
+
+The result is not used. This step allows for a speculative fetch to be initiated from non-speculative parsing. The fetch is still speculative at this point, because, for example, by the time the element is inserted, intended parent might have been removed from the document.
+
+Let document be intended parent's node document.
+
+Let local name be the tag name of the token.
+
+Let is be the value of the "is" attribute in the given token, if such an attribute exists, or null otherwise.
+
+Let definition be the result of looking up a custom element definition given document, given namespace, local name, and is.
+
+If definition is non-null and the parser was not created as part of the HTML fragment parsing algorithm, then let will execute script be true. Otherwise, let it be false.
+
+If will execute script is true, then:
+
+Increment document's throw-on-dynamic-markup-insertion counter.
+
+If the JavaScript execution context stack is empty, then perform a microtask checkpoint.
+
+Push a new element queue onto document's relevant agent's custom element reactions stack.
+
+Let element be the result of creating an element given document, localName, given namespace, null, and is. If will execute script is true, set the synchronous custom elements flag; otherwise, leave it unset.
+
+This will cause custom element constructors to run, if will execute script is true. However, since we incremented the throw-on-dynamic-markup-insertion counter, this cannot cause new characters to be inserted into the tokenizer, or the document to be blown away.
+
+Append each attribute in the given token to element.
+
+This can enqueue a custom element callback reaction for the attributeChangedCallback, which might run immediately (in the next step).
+
+Even though the is attribute governs the creation of a customized built-in element, it is not present during the execution of the relevant custom element constructor; it is appended in this step, along with all other attributes.
+
+If will execute script is true, then:
+
+Let queue be the result of popping from document's relevant agent's custom element reactions stack. (This will be the same element queue as was pushed above.)
+
+Invoke custom element reactions in queue.
+
+Decrement document's throw-on-dynamic-markup-insertion counter.
+
+If element has an xmlns attribute in the XMLNS namespace whose value is not exactly the same as the element's namespace, that is a parse error. Similarly, if element has an xmlns:xlink attribute in the XMLNS namespace whose value is not the XLink Namespace, that is a parse error.
+
+If element is a resettable element, invoke its reset algorithm. (This initializes the element's value and checkedness based on the element's attributes.)
+
+If element is a form-associated element and not a form-associated custom element, the form element pointer is not null, there is no template element on the stack of open elements, element is either not listed or doesn't have a form attribute, and the intended parent is in the same tree as the element pointed to by the form element pointer, then associate element with the form element pointed to by the form element pointer and set element's parser inserted flag.
+
+Return element.}
+	Result := Document.createElement((Node as TStartTagToken).TagName);
 end;
 
-class function THtmlParser.Parse(const HtmlStr: TDomString): TDocument;
-var
-	parser: THtmlParser;
+procedure THtmlParser.AddMarkerToActiveFormattingElements;
 begin
-	parser := THtmlParser.Create;
-	try
-		parser.Scripting := False;
-		Result := parser.ParseString(HtmlStr);
-	finally
-		parser.Free;
-	end;
-end;
-
-function THtmlParser.ParseString(const htmlStr: TDomString): TDocument;
-begin
-	FTokenizer := THtmlTokenizer.Create(HtmlStr);
-	FTokenizer.OnToken := ProcessToken;
-
-	if FHtmlDocument <> nil then
-		FreeAndNil(FHtmlDocument);
-
-	FHtmlDocument := TDocument.Create;
-	FTokenizer.Parse;
-	Result := FHtmlDocument;
-end;
-
-procedure THtmlParser.ProcessNodeAccordingToInsertionMode(const Node: THtmlToken; AInsertionMode: TInsertionMode);
-begin
-	case AInsertionMode of
-	imInitial:					DoInitialInsertionMode(Node); 				//"initial"
-	imBeforeHtml:				DoBeforeHtmlInsertionMode(Node); 			//"before html"
-	imBeforeHead:				DoBeforeHeadInsertionMode(Node); 			//"before head"
-	imInHead:					DoInHeadInsertionMode(Node); 					//"in head"
-	imInHeadNoscript:			DoInHeadNoscriptInsertionMode(Node);		//"in head no script"
-	imAfterHead:				DoAfterHeadInsertionMode(Node);				//"after head",
-	imInBody:					DoInBodyInsertionMode(Node);					//"in body",
-	imText:						DoTextInsertionMode(Node);						//"text",
-	imInTable:					DoInTableInsertionMode(Node);					//"in table",
-	imInTableText:				DoInTableTextInsertionMode(Node);			//"in table text",
-	imInCaption:				DoInCaptionInsertionMode(Node);				//"in caption",
-	imInColumnGroup:			DoInColumnGroupInsertionMode(Node);			//"in column group",
-	imInTableBody:				DoInTableBodyInsertionMode(Node);			//"in table body",
-	imInRow:						DoInRowInsertionMode(Node);					//"in row",
-	imInCell:					DoInCellInsertionMode(Node);					//"in cell",
-	imInSelect:					DoInSelectInsertionMode(Node);				//"in select",
-	imInSelectInTable:		DoInSelectInTableInsertionMode(Node);		//"in select in table",
-	imInTemplate:				DoInTemplateInsertionMode(Node);				//"in template",
-	imAfterBody:				DoAfterBodyInsertionMode(Node);			  	//"after body",
-	imInFrameset:				DoInFramesetInsertionMode(Node);				//"in frameset",
-	imAfterFrameset:			DoAfterFramesetInsertionMode(Node);			//"after frameset",
-	imAfterAfterBody:			DoAfterAfterBodyInsertionMode(Node);		//"after after body",
-	imAfterAfterFrameset:  	DoAfterAfterFrameseInsertionMode(Node);	//"after after frameset"
-	else
-		raise Exception.Create('Unknown insertion mode');
-	end;
-end;
-
-procedure THtmlParser.ProcessToken(Sender: TObject; AToken: THtmlToken);
-begin
-	if AToken = nil then
-		raise EArgumentNilException.Create('AToken');
-
-	Log('    ==> Emitted token '+AToken.Description);
-
-	ProcessNodeAccordingToInsertionMode(AToken, FInsertionMode);
+	AddNotImplementedParseError('AddMarkerToActiveFormattingElements');
 end;
 
 procedure THtmlParser.ResetTheInsertionModeAppropriately;
@@ -2543,52 +2591,6 @@ begin
 
 		Dec(nodeIndex);
 	end;
-end;
-
-procedure THtmlParser.SetInsertionMode(const Mode: TInsertionMode);
-begin
-{
-	The insertion mode is a state variable that controls the primary operation of the tree construction stage.
-
-	Initially, the insertion mode is "initial". It can change to
-
-	- "before html"
-	- "before head"
-	- "in head"
-	- "in head noscript"
-	- "after head"
-	- "in body"
-	- "text"
-	- "in table"
-	- "in table text"
-	- "in caption"
-	- "in column group"
-	- "in table body"
-	- "in row"
-	- "in cell"
-	- "in select"
-	- "in select in table"
-	- "in template"
-	- "after body",
-	- "in frameset",
-	- "after frameset",
-	- "after after body",
-	- "after after frameset"
-
-	during the course of the parsing, as described in the tree construction stage.
-
-	The insertion mode affects how tokens are processed and whether CDATA sections are supported.
-
-	Several of these modes, namely "in head", "in body", "in table", and "in select", are special,
-	in that the other modes defer to them at various times.
-
-	When the algorithm below says that the user agent is to do something
-	"using the rules for the m insertion mode", where m is one of these modes,
-	the user agent must use the rules described under the m insertion mode's section,
-	but must leave the insertion mode unchanged unless the rules in m themselves
-	switch the insertion mode to a new value.
-}
-	FInsertionMode := Mode;
 end;
 
 function THtmlParser.TextIs(const Left: UnicodeString; const Right: array of UnicodeString): Boolean;
