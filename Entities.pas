@@ -25,6 +25,7 @@ const
 
 function TryGetEntityInfo(const Name: string; out EntityInfo: TEntityInfo): Boolean;
 function GetEntValue(const Name: string): UnicodeString;
+function FindMatchingEntity(const PartialName: string; out EntityInfo: TEntityInfo): Integer;
 
 implementation
 
@@ -2263,7 +2264,7 @@ const
 		(Name: 'zopf;';                             Code: [120171]), // '\uD835\uDD6B'
 		(Name: 'zscr;';                             Code: [120015]), // '\uD835\uDCCF'
 		(Name: 'zwj;';                              Code: [8205]),   // '\u200D'
-		(Name: 'zwnj;';                             Code: [8204])   // '\u200C'
+		(Name: 'zwnj;';                             Code: [8204])    // '\u200C'
 	);
 
 type
@@ -2277,7 +2278,21 @@ type
 	end;
 
 var
-	EntityList: TEntList;
+	g_EntityList: TEntList;
+
+function EntityList: TEntList; //singleton
+var
+	list: TEntList;
+begin
+	list := g_EntityList;
+	if list = nil then
+	begin
+		list := TEntList.Create;
+		g_EntityList := list;
+	end;
+
+	Result := g_EntityList;
+end;
 
 function EntCompare(Ent1, Ent2: Pointer): Integer;
 begin
@@ -2343,6 +2358,25 @@ begin
 	end;
 end;
 
+function FindMatchingEntity(const PartialName: string; out EntityInfo: TEntityInfo): Integer;
+var
+	i: Integer;
+	ei: PEntityInfo;
+begin
+	Result := 0;
+	for i := 0 to Entitylist.FList.Count-1 do
+	begin
+		ei := PEntityInfo(EntityList.FList.Items[i]);
+		if Copy(ei.Name, 1, Length(PartialName)) = PartialName then
+		begin
+			EntityInfo := ei^;
+			Inc(Result);
+			if Result >= 2 then
+				Break; //we've made our point
+		end;
+	end;
+end;
+
 function GetEntValue(const Name: string): UnicodeString;
 var
 	entityInfo: TEntityInfo;
@@ -2398,12 +2432,5 @@ Every feature we add to the web platform has a cost:
 - Bug fixing: when bugs are found in the spec or implementations, someone has to figure out a fix, implement it, test it, ship it, tests have to be fixed, documentation has to be updated, etc
 - Code size: each feature increases the size of browsers (both on-disk binaries and in-memory resident size)
 }
-
-
-initialization
-	EntityList := TEntList.Create
-
-finalization
-	EntityList.Free
 
 end.
