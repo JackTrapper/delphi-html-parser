@@ -103,10 +103,10 @@ type
 			ttEndOfFile		//end-of-file	(TEndOfFileToken)
 	);
 
-{
-	The InputStream supplies a series of Unicode characters to the tokenizer.
-	The InputStream also takes care of converting any CRLF into LF (as CR is never allowed to reach the HTML tokenizer)
 
+{
+	The InputStream supplies a series of Unicode UCS4 characters to the tokenizer.
+	The InputStream also takes care of converting any CRLF into LF (as CR is never allowed to reach the HTML tokenizer)
 }
 	TInputStream = class
 	private
@@ -139,8 +139,8 @@ type
 		THtmlToken
 			- TDocTypeToken
 			- TTagToken
-			- TStartTagToken
-			- TEndTagToken
+				- TStartTagToken
+				- TEndTagToken
 			- TCommentToken
 			- TCharacterToken
 			- TEndOfFileToken
@@ -188,24 +188,26 @@ type
 		property ForceQuirks: Boolean read FForceQuirks write FForceQuirks;
 	end;
 
-	TAttribute = record
+	// HTML5: "If designed today they would just have a name and value."
+	TAttribute = class
+	private
+		FIsRemoved: Boolean;
+	public
 		Name: UnicodeString;
 		Value: UnicodeString;
 	end;
-	TAttributes = array of TAttribute;
+//	TAttributes = array of TAttribute;
 
 	//Base class of StartTagToken and EndTagToken
 	TTagToken = class(THtmlToken)
 	private
 		FTagName: UnicodeString;
-		FAttributes: TAttributes;
+		FAttributes: TObjectList; //of TAttribute objects
 		FSelfClosing: Boolean;
+		function GetAttributes(i: Integer): TAttribute;
+		function GetAttributeCount: Integer;
 	protected
-		CurrentAttributeName: UnicodeString;
-		CurrentAttributeValue: UnicodeString;
-
-		procedure NewAttribute;
-		procedure FinalizeAttributeName;
+		function NewAttribute: TAttribute;
 		function GetDescription: string; override;
 	public
 		constructor Create(ATokenType: THtmlTokenType);
@@ -214,7 +216,8 @@ type
 		procedure AddAttribute(Name, Value: UnicodeString);
 
 		property TagName: UnicodeString read FTagName write FTagName;
-		property Attributes: TAttributes read FAttributes;
+		property Attributes[n: Integer]: TAttribute read GetAttributes;
+		property AttributeCount: Integer read GetAttributeCount;
 		property SelfClosing: Boolean read FSelfClosing write FSelfClosing;
 	end;
 
@@ -225,6 +228,8 @@ type
 	end;
 
 	TEndTagToken = class(TTagToken)
+	protected
+		function GetDescription: string; override;
 	public
 		constructor Create;
 	end;
@@ -271,6 +276,7 @@ type
 		FCurrentInputCharacter: UCS4Char;
 		FCurrentToken2: THtmlToken;
 		FCharacterReferenceCode: Cardinal;
+		FCurrentAttribute: TAttribute;
 		FReconsume: Boolean;
 
 		FEOF: Boolean;
@@ -289,8 +295,13 @@ type
 		procedure AddNotImplementedParseError(const StateHandlerName: string);
 		function ExtractCurrentToken: THtmlToken;
 		procedure FlushDelayedTokens;
+		procedure FinalizeCurrentAttribute;
 
 		function GetNext: UCS4Char;
+		function IsSurrogate(const ch: UCS4Char): Boolean;
+		function IsNonCharacter(const ch: UCS4Char): Boolean;
+		function IsControlC0Character(const ch: UCS4Char): Boolean;
+		function IsControlCharacter(const ch: UCS4Char): Boolean;
 
 		procedure SetCurrentToken(const Value: THtmlToken);			//13.2.5.80 Numeric character reference end state
 
@@ -311,6 +322,7 @@ type
 
 		procedure SetReturnState(const State: TTokenizerState);
 		function Consume: UCS4Char;
+		function Peek: UCS4Char;
 
 		function NextFewCharacters(const Value: UnicodeString; const CaseSensitive: Boolean; const IncludingCurrentInputCharacter: Boolean): Boolean;
 		function GetCurrentTagToken: TTagToken;
@@ -422,6 +434,7 @@ type
 		procedure Parse;
 
 		procedure SetState(const State: TTokenizerState); //tree construction has two situations where it needs to change the tokenzier state
+		procedure SetLastStartTag(const LastStartTagName: string); //some test cases, and i think templates, need to let you set the LastStartTag
 
 		property ParserPause: Boolean read FParserPause write FParserPause;
 		property LoggingFlags: Cardinal read FLogFlags write FLogFlags;
@@ -430,9 +443,11 @@ type
 
 
 const
-	LOG_TOKENIZER_STATECHANGE		= $00000001;
-	LOG_TOKENIZER_EMITTOKEN       = $00000002;
-	LOG_TOKENIZER_PARSEERROR		= $00000004;
+	LOG_TOKENIZER_CONSUME         = $00000001;
+	LOG_TOKENIZER_STATECHANGE		= $00000002;
+	LOG_TOKENIZER_EMITTOKEN       = $00000004;
+	LOG_TOKENIZER_PARSEERROR		= $00000008;
+	LOG_TOKENIZER_PEEK				= $00000010;
 
 type
 {
@@ -488,7 +503,7 @@ uses
 const
 	//https://infra.spec.whatwg.org/#code-points
 	asciiTabOrNewline		= [$0009, $000A, $000D]; 	//TAB, LF, CR. https://infra.spec.whatwg.org/#ascii-tab-or-newline
-   asciiWhitespace      = [$0009, $000A, $000C, $000D, $0020]; //TAB, LF, FF, CR, SPACE. //https://infra.spec.whatwg.org/#ascii-whitespace
+	asciiWhitespace      = [$0009, $000A, $000C, $000D, $0020]; //TAB, LF, FF, CR, SPACE. //https://infra.spec.whatwg.org/#ascii-whitespace
 	asciiDigit				= [Ord('0')..Ord('9')]; //https://infra.spec.whatwg.org/#ascii-digit
 	asciiUpperHexDigit	= [Ord('A')..Ord('F')]; //https://infra.spec.whatwg.org/#ascii-upper-hex-digit
 	asciiLowerHexDigit	= [Ord('a')..Ord('f')]; //https://infra.spec.whatwg.org/#ascii-lower-hex-digit
@@ -580,12 +595,18 @@ end;
 
 procedure THtmlTokenizer.AppendToCurrentAttributeName(const Value: UCS4Char);
 begin
-	CurrentTagToken.CurrentAttributeName := CurrentTagToken.CurrentAttributeName + UCS4CharToUnicodeString(Value);
+	if FCurrentAttribute = nil then
+		raise Exception.Create('AppendToCurrentAttributeName, but CurrentAttribute is nil');
+
+	FCurrentAttribute.Name := FCurrentAttribute.Name + UCS4CharToUnicodeString(Value);
 end;
 
 procedure THtmlTokenizer.AppendToCurrentAttributeValue(const Value: UCS4Char);
 begin
-	CurrentTagToken.CurrentAttributeValue := CurrentTagToken.CurrentAttributeValue + UCS4CharToUnicodeString(Value);
+	if FCurrentAttribute = nil then
+		raise EParserError.Create('AppendToCurrentAttributeValue, but CurrentAttribute is nil');
+
+	FCurrentAttribute.Value := FCurrentAttribute.Value + UCS4CharToUnicodeString(Value);
 end;
 
 procedure THtmlTokenizer.AppendToCurrentCommentData(const Value: UCS4Char);
@@ -610,7 +631,9 @@ begin
 	end;
 
 	Result := FCurrentInputCharacter;
-	LogFmt('<== U+%.8x (''%s'')', [Result, WideChar(Result)]);
+
+	if (FLogFlags and LOG_TOKENIZER_CONSUME) <> 0 then
+		LogFmt('<== U+%.8x (''%s'')', [Result, WideChar(Result)]);
 end;
 
 constructor THtmlTokenizer.Create(Html: UnicodeString);
@@ -726,6 +749,20 @@ begin
 	FlushDelayedTokens;
 end;
 
+function THtmlTokenizer.Peek: UCS4Char;
+begin
+	if (FReconsume) then
+	begin
+		Result := FCurrentInputCharacter;
+		Exit;
+	end;
+
+	Result := FStream.Peek(1);
+
+	if (FLogFlags and LOG_TOKENIZER_PEEK) <> 0 then
+		LogFmt('<== U+%.8x (''%s'') PEEK', [Result, WideChar(Result)]);
+end;
+
 procedure THtmlTokenizer.DoDataState;
 var
 	ch: UCS4Char;
@@ -767,7 +804,7 @@ begin
 			SetReturnState(tsRCDATAState);
 			SetState(tsCharacterReferenceState);
 		end;
-	$003C: SetReturnState(tsRCDATALessThanSignState); //U+003C LESS-THAN SIGN
+	$003C: SetState(tsRCDATALessThanSignState); //U+003C LESS-THAN SIGN
 	$0000: //U+0000 NULL
 		begin
 			AddParseError('unexpected-null-character');
@@ -869,11 +906,11 @@ begin
 	begin
 		AddParseError('eof-before-tag-name'); //This is an eof-before-tag-name parse error.
 		EmitCharacter($003C); //Emit a U+003C LESS-THAN SIGN character token
-		EmitCharacter(UEOF); //and an end-of-file token.
+		EmitEndOfFileToken; //and an end-of-file token.
 	end
 	else
 	begin
-		AddParseError('invalid-first-character-of-tag-name'); //This is an eof-before-tag-name parse error.
+		AddParseError('invalid-first-character-of-tag-name'); //This is an invalid-first-character-of-tag-name parse error.
 		EmitCharacter($003C); //Emit a U+003C LESS-THAN SIGN character token
 		Reconsume(tsDataState); //Reconsume in the data state.
 	end;
@@ -1770,15 +1807,15 @@ begin
 	$003D: //U+003D EQUALS SIGN (=)
 		begin
 			AddParseError('unexpected-equals-sign-before-attribute-name'); //This is an unexpected-equals-sign-before-attribute-name parse error.
-			CurrentTagToken.NewAttribute; //Start a new attribute in the current tag token.
-			CurrentTagToken.CurrentAttributeName := UCS4CharToUnicodeString(FCurrentInputCharacter); //Set that attribute's name to the current input character,
-			CurrentTagToken.CurrentAttributeValue := ''; //and its value to the empty string.
+			FCurrentAttribute := CurrentTagToken.NewAttribute; //Start a new attribute in the current tag token.
+			FCurrentAttribute.Name := UCS4CharToUnicodeString(FCurrentInputCharacter); //Set that attribute's name to the current input character,
+			FCurrentAttribute.Value := ''; //and its value to the empty string.
 			SetState(tsAttributeNameState); //Switch to the attribute name state.
 		end;
 	else
-		CurrentTagToken.NewAttribute; //Start a new attribute in the current tag token.
-		CurrentTagToken.CurrentAttributeName := ''; // Set that attribute name and value to the empty string.
-		CurrentTagToken.CurrentAttributeValue := ''; // (and value!)
+		FCurrentAttribute := CurrentTagToken.NewAttribute; //Start a new attribute in the current tag token.
+		FCurrentAttribute.Name := ''; // Set that attribute name and value to the empty string.
+		FCurrentAttribute.Value := ''; // (and value!)
 		Reconsume(tsAttributeNameState); //Reconsume in the attribute name state.
 	end;
 end;
@@ -1805,12 +1842,10 @@ begin
 		//U+002F SOLIDUS (/)
 		//U+003E GREATER-THAN SIGN (>)
 		//EOF
-		CurrentTagToken.FinalizeAttributeName;
 		Reconsume(tsAfterAttributeNameState); //Reconsume in the after attribute name state.
 	end
 	else if ch = $003D then //U+003D EQUALS SIGN (=)
 	begin
-		CurrentTagToken.FinalizeAttributeName;
 		SetState(tsBeforeAttributeValueState); //Switch to the before attribute value state.
 	end
 	else if ch in asciiUpperAlpha then
@@ -1875,9 +1910,9 @@ begin
 			EmitEndOfFileToken; //Emit an end-of-file token.
 		end;
 	else
-		CurrentTagToken.NewAttribute; //Start a new attribute in the current tag token.
-		CurrentTagToken.CurrentAttributeName := ''; //Set that attribute name and value to the empty string.
-		CurrentTagToken.CurrentAttributeValue := ''; //(and value!)
+		FCurrentAttribute := CurrentTagToken.NewAttribute; //Start a new attribute in the current tag token.
+		FCurrentAttribute.Name := ''; //Set that attribute name and value to the empty string.
+		FCurrentAttribute.Value  := ''; //(and value!)
 		Reconsume(tsAttributeNameState); //Reconsume in the attribute name state.
 	end;
 end;
@@ -2035,6 +2070,8 @@ var
 begin
 	//13.2.5.39 After attribute value (quoted) state
 	//https://html.spec.whatwg.org/multipage/parsing.html#after-attribute-value-(quoted)-state
+	FCurrentAttribute := nil; //if we're done with an attribute, then i don't want to reference it by mistake anymore
+
 	ch := Consume; //Consume the next input character:
 	case ch of
 	$0009, //U+0009 CHARACTER TABULATION (tab)
@@ -3307,19 +3344,21 @@ begin
 }
 
 	name := '';
-	ch := Consume;
 	nMatches := 0;
 	entity := Default_EntityInfo;
 
+	ch := Peek;
 	while ch <> UEOF do
 	begin
-		AppendToTemporaryBuffer(ch);
 		name := name + UCS4CharToUnicodeString(ch);
 		nMatches :=  FindMatchingEntity(name, {out}entity);
+		if nMatches > 0 then
+			AppendToTemporaryBuffer(Consume);
+
 		if nMatches > 1 then
 		begin
 			//Still multiple matches, keep going
-			ch := Consume;
+			ch := Peek;
 			Continue;
 		end;
 
@@ -3378,7 +3417,7 @@ begin
 	begin
 		//If the character reference was consumed as part of an attribute, then
 		if IsConsumedAsPartOfAnAttribute then
-			CurrentTagToken.CurrentAttributeValue := CurrentTagToken.CurrentAttributeValue + UCS4CharToUnicodeString(FCurrentInputCharacter) //append the current input character to the current attribute's value.
+			AppendToCurrentAttributeValue(FCurrentInputCharacter) //append the current input character to the current attribute's value.
 		else
 			EmitCharacter(FCurrentInputCharacter); //emit the current input character as a character token.
 	end
@@ -3509,50 +3548,75 @@ procedure THtmlTokenizer.DoNumericCharacterReferenceEndState;
 begin
 	//13.2.5.80 Numeric character reference end state
 	//https://html.spec.whatwg.org/multipage/parsing.html#numeric-character-reference-end-state
-(*
-Check the character reference code:
 
-If the number is 0x00, then this is a null-character-reference parse error. Set the character reference code to 0xFFFD.
+	//Check the character reference code:
+	if FCharacterReferenceCode = 0 then
+	begin
+		//If the number is 0x00,
+		AddParseError('null-character-reference'); //then this is a null-character-reference parse error.
+		FCharacterReferenceCode := $FFFD; //Set the character reference code to 0xFFFD.
+	end
+	else if (FCharacterReferenceCode >= $10FFFF) then
+	begin
+		//If the number is greater than 0x10FFFF,
+		AddParseError('character-reference-outside-unicode-range'); //then this is a character-reference-outside-unicode-range parse error.
+		FCharacterReferenceCode := $FFFD; //Set the character reference code to 0xFFFD.
+	end
+	else if IsSurrogate(FCharacterReferenceCode) then
+	begin
+		//If the number is a surrogate,
+		AddParseError('surrogate-character-reference'); //then this is a surrogate-character-reference parse error.
+		FCharacterReferenceCode := $FFFD; //Set the character reference code to 0xFFFD.
+	end
+	else if IsNonCharacter(FCharacterReferenceCode) then
+	begin
+		//If the number is a noncharacter,
+		//then this is a noncharacter-character-reference parse error.
+		AddParseError('noncharacter-character-reference');
+	end
+	else if (FCharacterReferenceCode = $0D) or ((IsControlCharacter(FCharacterReferenceCode) and not (FCharacterReferenceCode in asciiWhitespace))) then
+	begin
+		//If the number is 0x0D, or a control that's not ASCII whitespace, then
+		AddParseError('control-character-reference'); //this is a control-character-reference parse error.
 
-If the number is greater than 0x10FFFF, then this is a character-reference-outside-unicode-range parse error. Set the character reference code to 0xFFFD.
+		//If the number is one of the numbers in the first column of the following table,
+		//then find the row with that number in the first column,
+		//and set the character reference code to the number in the second column of that row.
+		case FCharacterReferenceCode of
+		$80: FCharacterReferenceCode := $20AC; //EURO SIGN (€)
+		$82: FCharacterReferenceCode := $201A; //SINGLE LOW-9 QUOTATION MARK (‚)
+		$83: FCharacterReferenceCode := $0192; //LATIN SMALL LETTER F WITH HOOK (ƒ)
+		$84: FCharacterReferenceCode := $201E; //DOUBLE LOW-9 QUOTATION MARK („)
+		$85: FCharacterReferenceCode := $2026; //HORIZONTAL ELLIPSIS (…)
+		$86: FCharacterReferenceCode := $2020; //DAGGER (†)
+		$87: FCharacterReferenceCode := $2021; //DOUBLE DAGGER (‡)
+		$88: FCharacterReferenceCode := $02C6; //MODIFIER LETTER CIRCUMFLEX ACCENT (ˆ)
+		$89: FCharacterReferenceCode := $2030; //PER MILLE SIGN (‰)
+		$8A: FCharacterReferenceCode := $0160; //LATIN CAPITAL LETTER S WITH CARON (Š)
+		$8B: FCharacterReferenceCode := $2039; //SINGLE LEFT-POINTING ANGLE QUOTATION MARK (‹)
+		$8C: FCharacterReferenceCode := $0152; //LATIN CAPITAL LIGATURE OE (Œ)
+		$8E: FCharacterReferenceCode := $017D; //LATIN CAPITAL LETTER Z WITH CARON (Ž)
+		$91: FCharacterReferenceCode := $2018; //LEFT SINGLE QUOTATION MARK (‘)
+		$92: FCharacterReferenceCode := $2019; //RIGHT SINGLE QUOTATION MARK (’)
+		$93: FCharacterReferenceCode := $201C; //LEFT DOUBLE QUOTATION MARK (“)
+		$94: FCharacterReferenceCode := $201D; //RIGHT DOUBLE QUOTATION MARK (”)
+		$95: FCharacterReferenceCode := $2022; //BULLET (•)
+		$96: FCharacterReferenceCode := $2013; //EN DASH (–)
+		$97: FCharacterReferenceCode := $2014; //EM DASH (—)
+		$98: FCharacterReferenceCode := $02DC; //SMALL TILDE (˜)
+		$99: FCharacterReferenceCode := $2122; //TRADE MARK SIGN (™)
+		$9A: FCharacterReferenceCode := $0161; //LATIN SMALL LETTER S WITH CARON (š)
+		$9B: FCharacterReferenceCode := $203A; //SINGLE RIGHT-POINTING ANGLE QUOTATION MARK (›)
+		$9C: FCharacterReferenceCode := $0153; //LATIN SMALL LIGATURE OE (œ)
+		$9E: FCharacterReferenceCode := $017E; //LATIN SMALL LETTER Z WITH CARON (ž)
+		$9F: FCharacterReferenceCode := $0178; //LATIN CAPITAL LETTER Y WITH DIAERESIS (Ÿ)
+		end;
+	end;
 
-If the number is a surrogate, then this is a surrogate-character-reference parse error. Set the character reference code to 0xFFFD.
-
-If the number is a noncharacter, then this is a noncharacter-character-reference parse error.
-
-If the number is 0x0D, or a control that's not ASCII whitespace, then this is a control-character-reference parse error. If the number is one of the numbers in the first column of the following table, then find the row with that number in the first column, and set the character reference code to the number in the second column of that row.
-
-Number	Code point
-0x80	0x20AC	EURO SIGN (€)
-0x82	0x201A	SINGLE LOW-9 QUOTATION MARK (‚)
-0x83	0x0192	LATIN SMALL LETTER F WITH HOOK (ƒ)
-0x84	0x201E	DOUBLE LOW-9 QUOTATION MARK („)
-0x85	0x2026	HORIZONTAL ELLIPSIS (…)
-0x86	0x2020	DAGGER (†)
-0x87	0x2021	DOUBLE DAGGER (‡)
-0x88	0x02C6	MODIFIER LETTER CIRCUMFLEX ACCENT (ˆ)
-0x89	0x2030	PER MILLE SIGN (‰)
-0x8A	0x0160	LATIN CAPITAL LETTER S WITH CARON (Š)
-0x8B	0x2039	SINGLE LEFT-POINTING ANGLE QUOTATION MARK (‹)
-0x8C	0x0152	LATIN CAPITAL LIGATURE OE (Œ)
-0x8E	0x017D	LATIN CAPITAL LETTER Z WITH CARON (Ž)
-0x91	0x2018	LEFT SINGLE QUOTATION MARK (‘)
-0x92	0x2019	RIGHT SINGLE QUOTATION MARK (’)
-0x93	0x201C	LEFT DOUBLE QUOTATION MARK (“)
-0x94	0x201D	RIGHT DOUBLE QUOTATION MARK (”)
-0x95	0x2022	BULLET (•)
-0x96	0x2013	EN DASH (–)
-0x97	0x2014	EM DASH (—)
-0x98	0x02DC	SMALL TILDE (˜)
-0x99	0x2122	TRADE MARK SIGN (™)
-0x9A	0x0161	LATIN SMALL LETTER S WITH CARON (š)
-0x9B	0x203A	SINGLE RIGHT-POINTING ANGLE QUOTATION MARK (›)
-0x9C	0x0153	LATIN SMALL LIGATURE OE (œ)
-0x9E	0x017E	LATIN SMALL LETTER Z WITH CARON (ž)
-0x9F	0x0178	LATIN CAPITAL LETTER Y WITH DIAERESIS (Ÿ)
-Set the temporary buffer to the empty string. Append a code point equal to the character reference code to the temporary buffer. Flush code points consumed as a character reference. Switch to the return state.
-*)
-	AddNotImplementedParseError('NumericCharacterReferenceEndState');
+	SetLength(FTemporaryBuffer, 0); //Set the temporary buffer to the empty string.
+	AppendToTemporaryBuffer(FCharacterReferenceCode); //Append a code point equal to the character reference code to the temporary buffer.
+	FlushCodePointsConsumed; //Flush code points consumed as a character reference.
+	SetState(FReturnState2); //Switch to the return state.
 end;
 
 procedure THtmlTokenizer.EmitCharacter(const Character: UCS4Char);
@@ -3588,6 +3652,16 @@ var
 	token: THtmlToken;
 begin
 	//Emit the current token - which is assumed to be a either a StartTag or EndTag token.
+
+{
+	When the user agent leaves the attribute name state
+	(and before emitting the tag token, if appropriate),
+	the complete attribute's name must be compared to the other attributes on the same token;
+	if there is already an attribute on the token with the exact same name,
+	then this is a duplicate-attribute parse error and the new attribute must be removed from the token.
+}
+	Self.FinalizeCurrentAttribute;
+
 	token := ExtractCurrentToken;
 	if token = nil then
 		raise Exception.Create('Attempting to emit current tag token when the current token is nil');
@@ -3643,7 +3717,7 @@ begin
 
 	//When an end tag token is emitted with attributes,
 	//that is an end-tag-with-attributes parse error.
-	if Length(EndTag.Attributes) > 0 then
+	if EndTag.AttributeCount > 0 then
 		AddParseError('end-tag-with-attributes');
 
 	//When an end tag token is emitted with its self-closing flag set,
@@ -3661,8 +3735,6 @@ begin
 }
 	if StartTag = nil then
 		raise Exception.Create('Attempt to emit nil Start Tag token');
-
-	startTag.FinalizeAttributeName;
 
 {
 	https://html.spec.whatwg.org/multipage/parsing.html#acknowledge-self-closing-flag
@@ -3704,7 +3776,47 @@ end;
 function THtmlTokenizer.ExtractCurrentToken: THtmlToken;
 begin
 	Result := FCurrentToken2;
-   FCurrentToken2 := nil;
+	FCurrentToken2 := nil;
+	FCurrentAttribute := nil;
+end;
+
+procedure THtmlTokenizer.FinalizeCurrentAttribute;
+var
+	i: Integer;
+	attr: TAttribute;
+begin
+{
+	When the user agent leaves the attribute name state
+	(and before emitting the tag token, if appropriate),
+	the complete attribute's name must be compared to the other attributes on the same token;
+
+	if there is already an attribute on the token with the exact same name,
+	then this is a duplicate-attribute parse error
+	and the new attribute must be removed from the token.
+}
+	if FCurrentAttribute = nil then
+		Exit;
+
+	if FCurrentAttribute.FIsRemoved then
+		Exit;
+
+	for i := 0 to CurrentTagToken.AttributeCount-1 do
+	begin
+		attr := CurrentTagToken.Attributes[i];
+		if attr = FCurrentAttribute then
+			Continue;
+
+		if SameText(attr.Name, FCurrentAttribute.Name) then
+		begin
+			//if there is already an attribute on the token with the exact same name,
+			AddParseError('duplicate-attribute'); //then this is a duplicate-attribute parse error
+
+			//and the new attribute must be removed from the token.
+			//CurrentTagToken.FAttributes.Extract(FCurrentAttribute); keep it in the list; because memory management...
+			FCurrentAttribute.FIsRemoved := True;
+			Break;
+		end;
+	end;
 end;
 
 procedure THtmlTokenizer.FlushCodePointsConsumed;
@@ -3724,7 +3836,7 @@ begin
 	if IsConsumedAsPartOfAnAttribute then
 	begin
 		for i := 0 to Length(FTemporaryBuffer)-1 do
-			CurrentTagToken.CurrentAttributeValue := CurrentTagToken.CurrentAttributeValue + UCS4CharToUnicodeString(FTemporaryBuffer[i]);
+			AppendToCurrentAttributeValue(FTemporaryBuffer[i]);
 	end
 	else
 	begin
@@ -3760,6 +3872,8 @@ end;
 function THtmlTokenizer.GetCurrentTagToken: TTagToken;
 begin
 	Result := CurrentToken as TTagToken;
+	if Result = nil then
+		raise Exception.Create('Asking for Current Tag Token but there is none');
 end;
 
 function THtmlTokenizer.GetNext: UCS4Char;
@@ -3783,7 +3897,7 @@ begin
 //		FLogFlags := FLogFlags or 	LOG_TOKENIZER_STATECHANGE;
 //		FLogFlags := FLogFlags or 	LOG_TOKENIZER_EMITTOKEN;
 //		FLogFlags := FLogFlags or 	LOG_TOKENIZER_PARSEERROR;
-		FLogFlags := FLogFlags or $FFFFFFFF;
+//		FLogFlags := FLogFlags or $FFFFFFFF;
 end;
 
 function THtmlTokenizer.IsAppropriateEndTag(const EndTagToken: TEndTagToken): Boolean;
@@ -3822,6 +3936,53 @@ begin
 			tsAttributeValueUnquotedState];
 end;
 
+function THtmlTokenizer.IsControlC0Character(const ch: UCS4Char): Boolean;
+begin
+{
+	https://infra.spec.whatwg.org/#c0-control
+	A C0 control is a code point in the range U+0000 NULL to U+001F INFORMATION SEPARATOR ONE, inclusive.
+}
+	Result := ((ch >= $0000) and (ch <= $001F));
+end;
+
+function THtmlTokenizer.IsControlCharacter(const ch: UCS4Char): Boolean;
+begin
+{
+	https://infra.spec.whatwg.org/#control
+
+	A control is a C0 control
+	or a code point in the range U+007F DELETE to U+009F APPLICATION PROGRAM COMMAND, inclusive.
+}
+	Result := IsControlC0Character(ch) or ((ch >= $007F) and (ch <= $009F));
+end;
+
+function THtmlTokenizer.IsNonCharacter(const ch: UCS4Char): Boolean;
+begin
+{
+	https://infra.spec.whatwg.org/#noncharacter
+}
+
+//	A noncharacter is a code point that is in the range U+FDD0 to U+FDEF, inclusive,
+//	or U+FFFE, U+FFFF, U+1FFFE, U+1FFFF, U+2FFFE, U+2FFFF, U+3FFFE, U+3FFFF, U+4FFFE, U+4FFFF,
+//	U+5FFFE, U+5FFFF, U+6FFFE, U+6FFFF, U+7FFFE, U+7FFFF, U+8FFFE, U+8FFFF, U+9FFFE, U+9FFFF, U+AFFFE, U+AFFFF, U+BFFFE, U+BFFFF, U+CFFFE, U+CFFFF, U+DFFFE, U+DFFFF, U+EFFFE, U+EFFFF, U+FFFFE, U+FFFFF, U+10FFFE, or U+10FFFF.
+	case ch of
+	$FD00..$FDEF,
+	$FFFE, $FFFF, $1FFFE, $1FFFF, $2FFFE, $2FFFF, $3FFFE, $3FFFF, $4FFFE, $4FFFF,
+	$5FFFE, $5FFFF, $6FFFE, $6FFFF, $7FFFE, $7FFFF, $8FFFE, $8FFFF, $9FFFE,
+	$9FFFF, $AFFFE, $AFFFF, $BFFFE, $BFFFF, $CFFFE, $CFFFF, $DFFFE, $DFFFF,
+	$EFFFE, $EFFFF, $FFFFE, $FFFFF, $10FFFE, $10FFFF:
+		Result := True;
+	else
+		Result := False;
+	end;
+end;
+
+function THtmlTokenizer.IsSurrogate(const ch: UCS4Char): Boolean;
+begin
+	//A surrogate is a code point that is in the range U+D800 to U+DFFF, inclusive.
+	Result := (ch >= $D800) and (ch <= $DFFF);
+end;
+
 procedure THtmlTokenizer.Reconsume(NewTokenizerState: TTokenizerState);
 begin
 {
@@ -3838,11 +3999,38 @@ begin
 end;
 
 procedure THtmlTokenizer.SetState(const State: TTokenizerState);
+var
+	reconsume: string;
 begin
+	if (FState2 = tsAttributeNameState) and (State <> tsAttributeNameState) then
+	begin
+		{
+			When the user agent leaves the attribute name state
+			(and before emitting the tag token, if appropriate),
+			the complete attribute's name must be compared to the other attributes on the same token;
+			if there is already an attribute on the token with the exact same name,
+			then this is a duplicate-attribute parse error
+			and the new attribute must be removed from the token.
+		}
+		FinalizeCurrentAttribute;
+	end;
+//	else if ((FState2 = tsAttributeValueUnquotedState) and (State <> tsAttributeValueUnquotedState))
+//			or ((State = tsAfterAttributeValueQuotedState)) then
+//		FCurrentAttribute := nil;
+
 	FState2 := State;
 
 	if (FLogFlags and LOG_TOKENIZER_STATECHANGE) <> 0 then
-		LogFmt('    ==> %s', [TypInfo.GetEnumName(TypeInfo(TTokenizerState), Ord(State))]);
+	begin
+		reconsume := '';
+		if FReconsume then
+			reconsume := ' (Reconsume)';
+
+		LogFmt('    ==> %s%s', [
+				TypInfo.GetEnumName(TypeInfo(TTokenizerState), Ord(State)),
+				reconsume
+		]);
+	end;
 end;
 
 function THtmlTokenizer.TemporaryBufferIs(const Value: UnicodeString): Boolean;
@@ -3859,12 +4047,19 @@ begin
 	if Value = nil then
 		raise Exception.Create('Do not set CurrentToken to nil. Use ExtractCurrentToken');
 
+	FCurrentAttribute := nil;
+
 	if FCurrentToken2 <> nil then
 	begin
 		LogFmt('Freeing existing current token "s"', [FCurrentToken2.GetDescription]);
 		FreeAndNil(FCurrentToken2);
 	end;
 	FCurrentToken2 := Value;
+end;
+
+procedure THtmlTokenizer.SetLastStartTag(const LastStartTagName: string);
+begin
+	FNameOfLastEmittedStartTag := LastStartTagName;
 end;
 
 procedure THtmlTokenizer.SetReturnState(const State: TTokenizerState);
@@ -4144,6 +4339,32 @@ begin
 	inherited Create(ttEndTag);
 end;
 
+function TEndTagToken.GetDescription: string;
+var
+	s: string;
+	i: Integer;
+	attr: TAttribute;
+begin
+{
+	</section id="lblTitle" class="blue even primary">
+}
+	s := '</'+Self.TagName;
+
+	{
+		End tags aren't supposed to have attributes.
+		But if someone added them, we will export them all the same.
+	}
+	for i := 0 to FAttributes.Count-1 do
+	begin
+		attr := FAttributes[i] as TAttribute;
+		s := s+' '+attr.Name+'="'+attr.Value+'"';
+	end;
+
+	s := s+'>';
+
+	Result := s;
+end;
+
 { TStartTagToken }
 
 procedure TStartTagToken.AcknowledgeSelfClosing;
@@ -4172,6 +4393,17 @@ end;
 
 function THtmlToken.GetDescription: string;
 begin
+{
+	Returns a test representation of the token. This is used for testing.
+
+			DOCTYPE: HTML
+			<section id="lblTitle" class="blue even primary">
+			#comment: Hello, world!
+			#character: ksg
+			[End-of-File]
+
+
+}
 	Result := 'Base Token';
 end;
 
@@ -4189,6 +4421,9 @@ end;
 
 function TCommentToken.GetDescription: string;
 begin
+{
+	#comment: Hello, world!
+}
 	Result := '#comment: '+Self.DataString;
 end;
 
@@ -4209,6 +4444,9 @@ var
 	s: string;
 //	ch: Word;
 begin
+{
+	#character: S
+}
 	s := Self.Data;
 
 (*
@@ -4271,7 +4509,10 @@ end;
 
 function TEndOfFileToken.GetDescription: string;
 begin
-   Result := '[End-of-File]';
+{
+	[End-of-File]
+}
+	Result := '[End-of-File]';
 end;
 
 { TFixedStreamAdapter }
@@ -4319,7 +4560,7 @@ begin
     if S[I] >= $10000 then
     begin
 		Inc(CharCount);
-      Tmp[CharCount] := WideChar((((S[I] - $00010000) shr 10) and $000003FF) or $D800);
+		Tmp[CharCount] := WideChar((((S[I] - $00010000) shr 10) and $000003FF) or $D800);
       Inc(CharCount);
       Tmp[CharCount] := WideChar(((S[I] - $00010000) and $000003FF)or $DC00);
     end
@@ -4436,12 +4677,12 @@ end;
 
 procedure TTagToken.AddAttribute(Name, Value: UnicodeString);
 var
-	n: Integer;
+	attr: TAttribute;
 begin
-	n := Length(FAttributes);
-	SetLength(FAttributes, n+1);
-	FAttributes[n].Name := Name;
-	FAttributes[n].Value := Value;
+	attr := TAttribute.Create;
+	attr.Name := Name;
+	attr.Value := Value;
+	FAttributes.Add(attr);
 end;
 
 procedure TTagToken.AppendCharacter(const ch: UCS4Char);
@@ -4454,48 +4695,56 @@ begin
 	inherited Create(ATokenType);
 
 	FSelfClosing := False; //self-closing flag must be unset (its other state is that it be set)
-	SetLength(FAttributes, 0); //and its attributes list must be empty.
+	FAttributes := TObjectList.Create(True); //owns objects
 end;
 
 destructor TTagToken.Destroy;
 begin
-	SetLength(FAttributes, 0);
+	FreeAndNil(FAttributes);
 
 	inherited;
 end;
 
-procedure TTagToken.FinalizeAttributeName;
+function TTagToken.GetAttributeCount: Integer;
 begin
-{
-	TODO: When the user agent leaves the attribute name state
-	(and before emitting the tag token, if appropriate),
-	the complete attribute's name must be compared to the other attributes on the same token;
-	if there is already an attribute on the token with the exact same name,
-	then this is a duplicate-attribute parse error
-	and the new attribute must be removed from the token.
-}
+	Result := FAttributes.Count;
+end;
+
+function TTagToken.GetAttributes(i: Integer): TAttribute;
+begin
+	Result := (FAttributes[i] as TAttribute);
 end;
 
 function TTagToken.GetDescription: string;
 var
 	s: string;
 	i: Integer;
+	attr: TAttribute;
 begin
 {
 	<section id="lblTitle" class="blue even primary">
 }
 	s := '<'+Self.TagName;
-	for i := 0 to High(FAttributes) do
-		s := s+' '+FAttributes[i].Name+'="'+FAttributes[i].Value+'"';
+	for i := 0 to FAttributes.Count-1 do
+	begin
+		attr := FAttributes[i] as TAttribute;
+		s := s+' '+attr.Name+'="'+attr.Value+'"';
+	end;
 	s := s+'>';
 
 	Result := s;
 end;
 
-procedure TTagToken.NewAttribute;
+function TTagToken.NewAttribute: TAttribute;
+var
+	attr: TAttribute;
 begin
-	CurrentAttributeName := '';
-	CurrentAttributeValue := '';
+	attr := TAttribute.Create;
+	attr.Name := '';
+	attr.Value := '';
+
+	FAttributes.Add(attr);
+	Result := attr;
 end;
 
 end.
